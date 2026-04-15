@@ -1,0 +1,16 @@
+{
+  "name": "samjin-qms",
+  "version": "1.0.0",
+  "description": "Samjin Gasket Quality Management System",
+  "main": "index.js",
+  "scripts": {
+    "login": "clasp login",
+    "push": "clasp push",
+    "watch": "clasp push --watch",
+    "deploy": "clasp deploy",
+    "open": "clasp open"
+  },
+  "devDependencies": {
+    "@google/clasp": "^2.4.2"
+  }
+}
