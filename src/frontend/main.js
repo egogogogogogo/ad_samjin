@@ -475,11 +475,6 @@ function renderLineBalancing() {
         return;
     }
 
-    document.getElementById('pb-target-qty').innerText = Number(lb.targetQty||0).toLocaleString();
-    document.getElementById('pb-actual-qty').innerText = Number(lb.actualQty||0).toLocaleString();
-    const rate = Math.round(Number(lb.achieveRate||0) * 100);
-    document.getElementById('pb-achieve-rate').innerText = `${rate}%`;
-
     const tbody = document.getElementById('plan-body');
     if(!state.simulators.length) state.simulators = lb.basics; // Load initial defaults from sheet
     
@@ -511,36 +506,89 @@ function renderLineBalancing() {
 
 function drawBottleneckSim() {
     const target = Number(state.data?.lineBalance?.targetQty || 6000000);
+    const cb = document.getElementById('plan-calc-body');
+    cb.innerHTML = '';
+    
+    let simulatedCapaM = [];
+    let bottleneckInfo = { process: '', capa: Infinity };
+
+    // Step 2: Render Calculated Metrics
+    state.simulators.forEach(sim => {
+        const dailyPerMachine = sim.timeCapa * sim.runTime;
+        const monthlyPerMachine = dailyPerMachine * sim.days;
+        const dailyTotal = dailyPerMachine * sim.machines;
+        const monthlyTotal = dailyTotal * sim.days;
+        const opRatio = sim.personnel > 0 ? (sim.machines / sim.personnel).toFixed(1) : 0;
+
+        simulatedCapaM.push({ process: sim.process, monthly: monthlyTotal, daily: dailyTotal, pct: target > 0 ? (monthlyTotal/target)*100 : 0 });
+
+        if(monthlyTotal < bottleneckInfo.capa) {
+            bottleneckInfo = { process: sim.process, capa: monthlyTotal };
+        }
+
+        cb.innerHTML += `
+            <tr>
+                <td style="font-weight:600; color:var(--accent);">${sim.process}</td>
+                <td style="font-family:var(--mono);">${monthlyTotal.toLocaleString()}</td>
+                <td style="font-family:var(--mono); color:var(--text-dim);">${dailyTotal.toLocaleString()}</td>
+                <td style="font-family:var(--mono); color:var(--text-dim);">${monthlyPerMachine.toLocaleString()}</td>
+                <td style="font-family:var(--mono); color:var(--text-dim);">${dailyPerMachine.toLocaleString()}</td>
+                <td style="font-family:var(--mono);">${opRatio}대/인</td>
+            </tr>
+        `;
+    });
+
+    // Step 3: KPIs
+    const actual = Math.min(...simulatedCapaM.map(s => s.monthly)); // BottleNeck bounds production
+    const achieveRate = target > 0 ? (actual / target) * 100 : 0;
+    
+    document.getElementById('pb-target-qty').innerText = target.toLocaleString();
+    document.getElementById('pb-actual-qty').innerText = actual.toLocaleString();
+    document.getElementById('pb-achieve-rate').innerText = `${achieveRate.toFixed(1)}%`;
+    document.getElementById('pb-achieve-rate').style.color = achieveRate >= 100 ? 'var(--success)' : (achieveRate >= 90 ? 'var(--warning)' : 'var(--danger)');
+
+    // Step 4: Insights & Bottleneck Bars
     const container = document.getElementById('bottleneck-container');
     container.innerHTML = '';
-    
-    // Simulate total Capa based on input
-    state.simulators.forEach(sim => {
-        const estMonthlyCapa = sim.timeCapa * sim.runTime * sim.machines * sim.days;
-        const pct = target > 0 ? (estMonthlyCapa / target) * 100 : 0;
-        const isBottleneck = estMonthlyCapa < target;
-        
-        let barW = pct > 120 ? 120 : pct; // cap visual at 120%
-        const cls = isBottleneck ? 'danger' : '';
-        const txtColor = isBottleneck ? 'var(--danger)' : 'var(--success)';
+    simulatedCapaM.forEach(s => {
+        const isBottleneck = s.monthly < target;
+        const isWorst = s.process === bottleneckInfo.process;
+        let barW = s.pct > 120 ? 120 : s.pct; 
+        const cls = isWorst ? 'danger' : (isBottleneck ? 'danger' : '');
+        const txtColor = isWorst ? 'var(--danger)' : (isBottleneck ? 'var(--warning)' : 'var(--success)');
 
         container.innerHTML += `
             <div style="display:flex; flex-direction:column; gap:8px;">
                 <div style="display:flex; justify-content:space-between; font-size:12px; font-weight:600;">
-                    <span>${sim.process} 공정 예상 Capa 
+                    <span>${s.process} 공정 (목표대비 ${s.pct.toFixed(0)}%)
                         <span style="color:${txtColor}; font-size:11px; margin-left:8px;">
-                            ${isBottleneck ? '⚠️ 수량 부족 (병목 예상)' : '✅ 목표 달성 충분'}
+                            ${isWorst ? '🚨 최저 병목 구간' : (isBottleneck ? '⚠️ Capa 미달' : '✅ 양호')}
                         </span>
                     </span>
-                    <span style="font-family:var(--mono);">${estMonthlyCapa.toLocaleString()} / ${target.toLocaleString()} EA</span>
+                    <span style="font-family:var(--mono);">${s.monthly.toLocaleString()} / ${target.toLocaleString()} EA</span>
                 </div>
                 <div class="bottleneck-bar-wrap">
                     <div class="bottleneck-bar ${cls}" style="width:${barW}%;"></div>
-                    <div class="bottleneck-target-line" style="left:${target>0 ? Math.min(100, 100) : 100}%"></div>
+                    <div class="bottleneck-target-line" style="left:${target>0 ? Math.min((100/120)*100, 83.3) : 100}%" title="Target Line"></div>
                 </div>
             </div>
         `;
     });
+
+    // Insight Alert Message
+    const msgBox = document.getElementById('bottleneck-insight-msg');
+    let deficit = target - actual;
+    if(deficit > 0) {
+        msgBox.innerHTML = `💡 <strong>AI 진단 결과:</strong> 현재 리소스 투입량 기준 월간 <strong>${deficit.toLocaleString()}개</strong>의 생산 차질이 예상됩니다.<br>
+        가장 시급한 병목 구간은 <strong>[${bottleneckInfo.process}]</strong> 공정입니다. 해당 공정의 장비 가동 대수를 늘리거나 일일 운영 시간을 연장하여 병목을 먼저 해소해야 최종 출하 실적을 높일 수 있습니다.`;
+        msgBox.style.background = 'rgba(248, 113, 113, 0.1)';
+        msgBox.style.borderColor = 'rgba(248, 113, 113, 0.2)';
+    } else {
+        msgBox.innerHTML = `🎉 <strong>AI 진단 결과:</strong> 현재 입력된 리소스 리소스로 경영 목표(${target.toLocaleString()}개)를 무사히 달성할 수 있습니다.<br>
+        모든 공정의 Capa가 목표치 이상을 상회하고 있어 여유 상태입니다.`;
+        msgBox.style.background = 'rgba(52, 211, 153, 0.1)';
+        msgBox.style.borderColor = 'rgba(52, 211, 153, 0.2)';
+    }
 }
 
 function renderSettings() { 

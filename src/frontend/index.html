@@ -167,47 +167,96 @@
 
         <!-- Planning -->
         <section id="tab-planning" class="tab-content">
-            <div class="card">
-                <div class="plan-hero">
-                    <div style="flex:1;">
-                        <h3 style="color:var(--text-dim); font-size:12px; margin-bottom:4px;">총 생산량 목표 (Target)</h3>
-                        <div id="pb-target-qty" style="font-size:28px; font-weight:700; font-family:var(--mono);">로딩 중...</div>
-                    </div>
-                    <div style="flex:1;">
-                        <h3 style="color:var(--text-dim); font-size:12px; margin-bottom:4px;">현재 생산 수량 (Actual)</h3>
-                        <div id="pb-actual-qty" style="font-size:28px; font-weight:700; font-family:var(--mono); color:var(--accent);">로딩 중...</div>
-                    </div>
-                    <div style="flex:1;">
-                        <h3 style="color:var(--text-dim); font-size:12px; margin-bottom:4px;">달성률 (Progress)</h3>
-                        <div id="pb-achieve-rate" style="font-size:28px; font-weight:700; font-family:var(--mono); color:var(--success);">로딩 중...</div>
-                    </div>
+            <div style="display:flex; justify-content:space-between; align-items:flex-end; margin-bottom:16px;">
+                <h2 style="font-size:18px; color:#fff;">라인 밸런싱 최적화 시뮬레이터</h2>
+                <div style="display:flex; gap:12px; align-items:center;">
+                    <span style="font-size:12px; color:var(--text-dim);">월간 산출 기준 모의 연산</span>
+                    <button class="btn-save" id="btn-save-plan" style="background:var(--success);">현재 시뮬레이션 설정 클라우드 저장</button>
                 </div>
-                
-                <div class="card-header" style="background:transparent; border-bottom:none; margin-top:16px;">
-                    <h3>1. 라인 밸런싱 시뮬레이터 파라미터 (값 변경 시 실시간 반영)</h3>
-                    <button class="btn-save" id="btn-save-plan" style="background:var(--success);">시뮬레이션 클라우드 저장</button>
+            </div>
+
+            <!-- Step 1: Input -->
+            <div class="card">
+                <div class="card-header">
+                    <h3>단계 1: 밸런싱 기초 파라미터 (입력부)</h3>
                 </div>
                 <div class="table-wrap">
                     <table id="plan-simulator-table">
                         <thead>
                             <tr>
                                 <th>운영 공정명</th>
-                                <th>시간 Capa/장비</th>
+                                <th>시간당 Capa/장비</th>
                                 <th>일일 운영시간</th>
                                 <th>가동 장비수</th>
                                 <th>운영 일수</th>
-                                <th>투입 인원</th>
+                                <th>투입 인원 (관리)</th>
                             </tr>
                         </thead>
                         <tbody id="plan-body"></tbody>
                     </table>
                 </div>
-                
-                <div class="card-header" style="background:transparent; border-top:1px solid rgba(255,255,255,0.05); margin-top:16px;">
-                    <h3>2. 공정별 병목 현상(Bottleneck) 모니터링</h3>
+            </div>
+
+            <!-- Step 2: Computation -->
+            <div class="card">
+                <div class="card-header">
+                    <h3>단계 2: Capa 및 효율 산출 지표 (자동 계산)</h3>
                 </div>
-                <div id="bottleneck-container" style="padding: 24px 32px; display:flex; flex-direction:column; gap:20px;">
-                    <!-- Inserted by JS -->
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>산출 공정명</th>
+                                <th>월간 공정 총Capa</th>
+                                <th>일일 공정 총Capa</th>
+                                <th>장비 1대/월간 Capa</th>
+                                <th>장비 1대/일일 Capa</th>
+                                <th>인당 장비 운용수</th>
+                            </tr>
+                        </thead>
+                        <tbody id="plan-calc-body"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Step 3 & 4: KPIs and Insights -->
+            <div style="display:grid; grid-template-columns: 1.2fr 2fr; gap:24px; padding-bottom:30px;">
+                <!-- Column 1: KPI -->
+                <div class="card" style="margin-bottom:0;">
+                    <div class="card-header">
+                        <h3>단계 3: 최종 생산 지표 예측</h3>
+                    </div>
+                    <div style="padding:24px; display:flex; flex-direction:column; gap:24px;">
+                        <div>
+                            <div style="color:var(--text-dim); font-size:12px; margin-bottom:4px;">경영 목표 수량 (Sheet 연동)</div>
+                            <div id="pb-target-qty" style="font-size:32px; font-weight:700; font-family:var(--mono);">로딩 중...</div>
+                        </div>
+                        <hr style="border:0; border-top:1px solid rgba(255,255,255,0.05); margin:0;">
+                        <div>
+                            <div style="color:var(--text-dim); font-size:12px; margin-bottom:4px;">시뮬레이션 예상 최대 생산량 (최저 병목 기준)</div>
+                            <div id="pb-actual-qty" style="font-size:32px; font-weight:700; font-family:var(--mono); color:var(--accent);">로딩 중...</div>
+                        </div>
+                        <hr style="border:0; border-top:1px solid rgba(255,255,255,0.05); margin:0;">
+                        <div>
+                            <div style="color:var(--text-dim); font-size:12px; margin-bottom:4px;">예상 목표 달성률</div>
+                            <div id="pb-achieve-rate" style="font-size:42px; font-weight:700; font-family:var(--mono); color:var(--success);">로딩 중...</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Column 2: Bottleneck Insights -->
+                <div class="card" style="margin-bottom:0;">
+                    <div class="card-header">
+                        <h3>단계 4: 공정별 병목 진단 및 리소스 인사이트</h3>
+                    </div>
+                    <div style="padding: 24px;">
+                        <div id="bottleneck-insight-msg" style="padding: 16px; background: rgba(56, 189, 248, 0.05); border: 1px solid rgba(56, 189, 248, 0.2); border-radius: 8px; font-size: 13px; color: #fff; margin-bottom: 24px; line-height: 1.6;">
+                            진단 데이터를 계산 중입니다...
+                        </div>
+                        <div id="bottleneck-container" style="display:flex; flex-direction:column; gap:20px;">
+                            <!-- Inserted by JS -->
+                        </div>
+                    </div>
                 </div>
             </div>
         </section>
