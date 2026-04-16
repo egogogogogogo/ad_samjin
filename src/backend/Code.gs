@@ -282,10 +282,10 @@ function extractCapData(raw) {
 }
 
 function fetchLineBalance(ss) {
-  const sh = ss.getSheetByName('생산계획 관리');
-  if (!sh) return null;
+  const sh = ss.getSheetByName('생산계획 관리') || ss.getSheetByName('삼진_Gasket 생산계획');
+  if (!sh) return { error: "Sheet not found" };
   const v = sh.getDataRange().getValues();
-  if (v.length < 20) return null;
+  while(v.length <= 25) v.push([]); // Pad empty rows to avoid crashes
   
   const basics = [];
   for(let i=9; i<=12; i++) {

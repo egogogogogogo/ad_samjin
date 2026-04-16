@@ -100,7 +100,12 @@ function createFilterUX() {
         state.filterValue = v;
         html = `<div class="input-with-icon"><input type="date" class="editable-input filter-val" value="${v}"></div>`;
     } else if (state.timeframe === 'weekly') {
-        html = `<div class="input-with-icon"><input type="week" class="editable-input filter-val" value="${state.filterValue}"></div>`;
+        const lbl = formatFilterLabel(state.filterValue, 'weekly');
+        const showLbl = state.filterValue ? lbl : '주간 선택';
+        html = `<div class="input-with-icon" style="position:relative;">
+            <div style="position:absolute; left:12px; top:50%; transform:translateY(-50%); pointer-events:none; font-family:var(--sans); font-size:12px; white-space:nowrap; background:var(--input-bg); padding-right:10px;">📅 ${showLbl}</div>
+            <input type="week" class="editable-input filter-val" value="${state.filterValue}" style="color:transparent; width:150px;">
+        </div>`;
     } else if (state.timeframe === 'monthly') {
         let v = state.filterValue.length !== 7 ? `${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2,'0')}` : state.filterValue;
         state.filterValue = v;
@@ -113,9 +118,9 @@ function createFilterUX() {
         html = `<div class="input-with-icon"><select class="editable-input filter-val">${opts}</select></div>`;
     } else if (state.timeframe === 'custom') {
         html = `
-            <div class="input-with-icon"><input type="date" class="editable-input c-start" value="${state.customFilter.start}" style="width:115px;"></div>
+            <div class="input-with-icon"><input type="date" class="editable-input c-start" value="${state.customFilter.start}" style="width:140px;"></div>
             <span style="color: var(--text-dim); margin:0 4px;">~</span>
-            <div class="input-with-icon"><input type="date" class="editable-input c-end" value="${state.customFilter.end}" style="width:115px;"></div>
+            <div class="input-with-icon"><input type="date" class="editable-input c-end" value="${state.customFilter.end}" style="width:140px;"></div>
         `;
     }
     return html;

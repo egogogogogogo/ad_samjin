@@ -439,3 +439,6 @@ tr:hover td {
 .bottleneck-bar { height:100%; background:var(--success); border-radius:4px; transition:0.3s; }
 .bottleneck-bar.danger { background:var(--danger); }
 .bottleneck-target-line { position:absolute; top:0; bottom:0; width:2px; background:#fff; z-index:2; box-shadow:0 0 4px #000; left: 0; }
+
+.editable-input[type="date"], .editable-input[type="week"], .editable-input[type="month"] { color-scheme: dark; }
+[data-theme="light"] .editable-input { color-scheme: light; }
