@@ -45,6 +45,7 @@ function doGet(e) {
     monthly: fetchData('월별 생산현황'),
     annual: fetchData('연간 실적 합계')[0] || {},
     plan: fetchData('plan'),
+    lineBalance: fetchLineBalance(ss),
     thresholds: thresholds,
     meta: fetchData('meta')[0] || {}
   })).setMimeType(ContentService.MimeType.JSON);
@@ -61,6 +62,14 @@ function doPost(e) {
     if (sh && data.length > 0) {
       sh.getRange(2, 1, sh.getLastRow(), sh.getLastColumn()).clearContent();
       sh.getRange(2, 1, data.length, data[0].length).setValues(data);
+    }
+  } else if (params.type === 'SAVE_LINE_BALANCE') {
+    const sh = ss.getSheetByName('생산계획 관리');
+    const b = params.payload;
+    if(sh && b.length === 4) {
+      const writeData = b.map(r => [r.timeCapa, r.runTime, r.machines, r.days, r.personnel]);
+      sh.getRange(10, 2, 4, 5).setValues(writeData);
+      SpreadsheetApp.flush(); // Ensure calculations are updated
     }
   } else if (params.type === 'SAVE_CONFIG') {
     PropertiesService.getScriptProperties().setProperties(params.payload);
@@ -270,4 +279,23 @@ function extractCapData(raw) {
     C1: r.c1, C2: r.c2, C3: r.c3, C4: r.c4, C5: r.c5,
     C6: r.c6, C7: r.c7, C8: r.c8, C9: r.c9, C10: r.c10
   }));
+}
+
+function fetchLineBalance(ss) {
+  const sh = ss.getSheetByName('생산계획 관리');
+  if (!sh) return null;
+  const v = sh.getDataRange().getValues();
+  if (v.length < 20) return null;
+  
+  const basics = [];
+  for(let i=9; i<=12; i++) {
+    basics.push({ process: String(v[i][0]).trim(), timeCapa: Number(v[i][1])||0, runTime: Number(v[i][2])||0, machines: Number(v[i][3])||0, days: Number(v[i][4])||0, personnel: Number(v[i][5])||0 });
+  }
+
+  const capas = [];
+  for(let i=16; i<=19; i++) {
+    capas.push({ process: String(v[i][0]).trim(), daily: Number(v[i][1])||0, monthly: Number(v[i][2])||0, reqPerson: Number(v[i][3])||0 });
+  }
+
+  return { targetQty: v[4][2]||0, actualQty: v[5][2]||0, achieveRate: v[6][2]||0, basics, capas };
 }

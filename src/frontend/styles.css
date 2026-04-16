@@ -12,9 +12,29 @@
   --danger: #f87171;
   --success: #34d399;
   --warning: #fbbf24;
+  --input-bg: rgba(0, 0, 0, 0.4);
   --mono: 'IBM Plex Mono', monospace;
   --sans: 'Outfit', 'Noto Sans KR', sans-serif;
   --glow-transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+[data-theme="light"] {
+  --bg: #f8fafc;
+  --sidebar-bg: #ffffff;
+  --card-bg: rgba(255, 255, 255, 0.85);
+  --border: rgba(15, 23, 42, 0.15);
+  --accent: #2563eb;
+  --accent-glow: rgba(37, 99, 235, 0.3);
+  --text-main: #0f172a;
+  --text-dim: #475569;
+  --danger: #ef4444;
+  --success: #10b981;
+  --warning: #f59e0b;
+  --input-bg: rgba(255, 255, 255, 0.9);
+}
+
+body[data-theme="light"] {
+  background-image: radial-gradient(circle at 15% 50%, rgba(37, 99, 235, 0.08), transparent 25%), radial-gradient(circle at 85% 30%, rgba(16, 185, 129, 0.08), transparent 25%);
 }
 
 * {
@@ -38,12 +58,12 @@ body {
 .sidebar {
   width: 240px;
   background: var(--sidebar-bg);
-  border-right: 1px solid rgba(255, 255, 255, 0.05);
+  border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   padding: 24px 0;
   z-index: 20;
-  box-shadow: 4px 0 24px rgba(0,0,0,0.2);
+  box-shadow: 4px 0 24px rgba(0,0,0,0.1);
 }
 
 .logo {
@@ -204,7 +224,7 @@ header {
   backdrop-filter: blur(10px);
   padding: 24px;
   border-radius: 16px;
-  border: 1px solid rgba(255,255,255,0.05);
+  border: 1px solid var(--border);
   transition: var(--glow-transition);
   position: relative;
   overflow: hidden;
@@ -248,7 +268,7 @@ header {
   background: var(--card-bg);
   backdrop-filter: blur(10px);
   border-radius: 16px;
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border);
   overflow: hidden;
   margin-bottom: 24px;
   transition: var(--glow-transition);
@@ -321,8 +341,8 @@ tr:hover td {
 
 /* Utilities / Inputs / Buttons */
 .editable-input {
-  background: rgba(0, 0, 0, 0.4);
-  border: 1px solid rgba(255,255,255,0.1);
+  background: var(--input-bg);
+  border: 1px solid var(--border);
   color: var(--accent);
   padding: 6px 12px;
   border-radius: 6px;
@@ -404,3 +424,18 @@ tr:hover td {
 .drill-down-active { box-shadow: 0 0 0 2px var(--accent); }
 .chart-back-btn { font-size: 11px; padding: 4px 8px; margin-top: 8px; cursor: pointer; color: var(--accent); background: rgba(56,189,248,0.1); border: 1px solid rgba(56,189,248,0.3); border-radius: 4px; display: inline-block; transition: 0.2s; }
 .chart-back-btn:hover { background: rgba(56,189,248,0.2); }
+
+/* Theme Toggle & Dropdown Helpers */
+.theme-switch { margin: auto 24px 10px; display:flex; align-items:center; cursor:pointer; font-size:12px; color:var(--text-dim); gap:8px; padding:8px; background:var(--card-bg); border:1px solid var(--border); border-radius:8px; transition:0.3s; }
+.theme-switch:hover { color:var(--text-main); border-color:var(--accent); }
+
+.input-with-icon { position:relative; display:inline-flex; align-items:center; }
+.input-with-icon input, .input-with-icon select { padding-right: 20px; cursor: pointer; }
+.input-with-icon::after { content: '¡å'; position:absolute; right:10px; font-size:10px; color:var(--accent); pointer-events:none; }
+
+/* Line Balancing Planner */
+.plan-hero { display:flex; gap:20px; align-items:center; padding:16px 24px; background:linear-gradient(90deg, rgba(37,99,235,0.1), transparent); border-bottom:1px solid var(--border); }
+.bottleneck-bar-wrap { flex:1; height:24px; background:rgba(255,255,255,0.05); border-radius:4px; position:relative; overflow:hidden; }
+.bottleneck-bar { height:100%; background:var(--success); border-radius:4px; transition:0.3s; }
+.bottleneck-bar.danger { background:var(--danger); }
+.bottleneck-target-line { position:absolute; top:0; bottom:0; width:2px; background:#fff; z-index:2; box-shadow:0 0 4px #000; left: 0; }
