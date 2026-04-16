@@ -469,10 +469,18 @@ function renderLineBalancing() {
     const lb = state.data.lineBalance;
     if(lb.error) {
         document.getElementById('plan-simulator-table').innerHTML = `<tr><td colspan="6" style="padding:40px; color:var(--danger); text-align:center;">${lb.msg} (구글 시트 탭 이름을 확인해주세요)</td></tr>`;
-        document.getElementById('pb-target-qty').innerText = "오류";
+        const tInput = document.getElementById('pb-target-qty-input');
+        if(tInput) tInput.value = "";
         document.getElementById('pb-actual-qty').innerText = "오류";
         document.getElementById('pb-achieve-rate').innerText = "오류";
         return;
+    }
+
+    const tInput = document.getElementById('pb-target-qty-input');
+    if(tInput && !tInput.getAttribute('data-init')) {
+        tInput.value = Number(lb.targetQty||6000000);
+        tInput.setAttribute('data-init', 'true');
+        tInput.addEventListener('input', drawBottleneckSim);
     }
 
     const tbody = document.getElementById('plan-body');
@@ -505,12 +513,16 @@ function renderLineBalancing() {
 }
 
 function drawBottleneckSim() {
-    const target = Number(state.data?.lineBalance?.targetQty || 6000000);
+    const tInput = document.getElementById('pb-target-qty-input');
+    const target = Number(tInput ? tInput.value : 6000000) || 0;
     const cb = document.getElementById('plan-calc-body');
     cb.innerHTML = '';
     
     let simulatedCapaM = [];
     let bottleneckInfo = { process: '', capa: Infinity };
+    let fastestInfo = { process: '', capa: 0 };
+    let totalCapas = 0;
+    let maxCapa = 0;
 
     // Step 2: Render Calculated Metrics
     state.simulators.forEach(sim => {
@@ -519,11 +531,18 @@ function drawBottleneckSim() {
         const dailyTotal = dailyPerMachine * sim.machines;
         const monthlyTotal = dailyTotal * sim.days;
         const opRatio = sim.personnel > 0 ? (sim.machines / sim.personnel).toFixed(1) : 0;
+        const uph = sim.personnel > 0 ? Math.round((sim.timeCapa * sim.machines) / sim.personnel) : 0;
+
+        totalCapas += monthlyTotal;
+        if(monthlyTotal > maxCapa) maxCapa = monthlyTotal;
 
         simulatedCapaM.push({ process: sim.process, monthly: monthlyTotal, daily: dailyTotal, pct: target > 0 ? (monthlyTotal/target)*100 : 0 });
 
         if(monthlyTotal < bottleneckInfo.capa) {
             bottleneckInfo = { process: sim.process, capa: monthlyTotal };
+        }
+        if(monthlyTotal > fastestInfo.capa) {
+            fastestInfo = { process: sim.process, capa: monthlyTotal };
         }
 
         cb.innerHTML += `
@@ -532,20 +551,31 @@ function drawBottleneckSim() {
                 <td style="font-family:var(--mono);">${monthlyTotal.toLocaleString()}</td>
                 <td style="font-family:var(--mono); color:var(--text-dim);">${dailyTotal.toLocaleString()}</td>
                 <td style="font-family:var(--mono); color:var(--text-dim);">${monthlyPerMachine.toLocaleString()}</td>
-                <td style="font-family:var(--mono); color:var(--text-dim);">${dailyPerMachine.toLocaleString()}</td>
                 <td style="font-family:var(--mono);">${opRatio}대/인</td>
+                <td style="font-family:var(--mono); font-weight:600; color:var(--warning);">${uph.toLocaleString()} 개/hr</td>
             </tr>
         `;
     });
+
+    // Calc LBE
+    const lbeScore = maxCapa > 0 ? (totalCapas / (maxCapa * state.simulators.length)) * 100 : 0;
+    const lbeEl = document.getElementById('lbe-score-text');
+    if(lbeEl) {
+        lbeEl.innerText = `${lbeScore.toFixed(1)}%`;
+        let lbeColor = lbeScore >= 80 ? 'var(--success)' : (lbeScore >= 65 ? 'var(--warning)' : 'var(--danger)');
+        lbeEl.style.color = lbeColor;
+    }
 
     // Step 3: KPIs
     const actual = Math.min(...simulatedCapaM.map(s => s.monthly)); // BottleNeck bounds production
     const achieveRate = target > 0 ? (actual / target) * 100 : 0;
     
-    document.getElementById('pb-target-qty').innerText = target.toLocaleString();
     document.getElementById('pb-actual-qty').innerText = actual.toLocaleString();
-    document.getElementById('pb-achieve-rate').innerText = `${achieveRate.toFixed(1)}%`;
-    document.getElementById('pb-achieve-rate').style.color = achieveRate >= 100 ? 'var(--success)' : (achieveRate >= 90 ? 'var(--warning)' : 'var(--danger)');
+    if(document.getElementById('pb-target-qty')) document.getElementById('pb-target-qty').innerText = target.toLocaleString(); // Fallback if needed
+    
+    const pbAch = document.getElementById('pb-achieve-rate');
+    pbAch.innerText = `${achieveRate.toFixed(1)}%`;
+    pbAch.style.color = achieveRate >= 100 ? 'var(--success)' : (achieveRate >= 90 ? 'var(--warning)' : 'var(--danger)');
 
     // Step 4: Insights & Bottleneck Bars
     const container = document.getElementById('bottleneck-container');
@@ -578,17 +608,51 @@ function drawBottleneckSim() {
     // Insight Alert Message
     const msgBox = document.getElementById('bottleneck-insight-msg');
     let deficit = target - actual;
+    let slackPct = target > 0 ? ((fastestInfo.capa - target) / target * 100).toFixed(1) : 0;
+    
+    // Marginal ROI for Solution
+    let roiProcess = bottleneckInfo.process;
+    let baselineActual = actual;
+    let simTarget = state.simulators.find(s => s.process === roiProcess);
+    let addProductionText = "";
+
+    if (simTarget) {
+        let originalMachines = simTarget.machines;
+        let newMonthly = (simTarget.timeCapa * simTarget.runTime * (originalMachines + 1)) * simTarget.days;
+        let capasCopy = simulatedCapaM.map(s => s.process === roiProcess ? newMonthly : s.monthly);
+        let potentialActual = Math.min(...capasCopy);
+        let marginalGain = potentialActual - baselineActual;
+        
+        if(marginalGain > 0) {
+            addProductionText = `<strong>${roiProcess}</strong> 공정에 <strong>장비 1대를 추가 투입</strong>할 경우, 월 예상 생산량이 <strong>${marginalGain.toLocaleString()}개 상승</strong>하여 최종 달성률이 <strong>${((potentialActual/target)*100).toFixed(1)}%</strong>로 개선됩니다.`;
+        } else {
+            // Marginal gain might be 0 if the 2nd bottleneck immediately blocks it!
+            addProductionText = `<strong>${roiProcess}</strong> 공정의 장비를 1대 늘리더라도 <strong>다른 공정이 2차 병목</strong>이 되어 즉각적인 최종 생산량 증가는 없습니다. 복합적인 라인 밸런싱이 필요합니다.`;
+        }
+    }
+
+    let diagText = "";
+    let solText = "";
+
     if(deficit > 0) {
-        msgBox.innerHTML = `💡 <strong>AI 진단 결과:</strong> 현재 리소스 투입량 기준 월간 <strong>${deficit.toLocaleString()}개</strong>의 생산 차질이 예상됩니다.<br>
-        가장 시급한 병목 구간은 <strong>[${bottleneckInfo.process}]</strong> 공정입니다. 해당 공정의 장비 가동 대수를 늘리거나 일일 운영 시간을 연장하여 병목을 먼저 해소해야 최종 출하 실적을 높일 수 있습니다.`;
-        msgBox.style.background = 'rgba(248, 113, 113, 0.1)';
+        diagText = `🚨 <strong>진단:</strong> 현재 <strong>[${bottleneckInfo.process}]</strong> 공정이 가장 느린 병목구간으로, 목표 대비 <strong>${deficit.toLocaleString()}개 미달</strong>입니다.<br>`;
+        if(slackPct > 0) {
+            diagText += `&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;반면 최상위 <strong>[${fastestInfo.process}]</strong> 공정은 목표대비 <strong>${slackPct}%의 잉여(Slack) 리소스</strong>가 방치/과잉 투자되어 있습니다.`;
+        }
+        solText = `💡 <strong>솔루션:</strong> 잉여 공정의 작업자를 재배치하거나 장비 가동시간을 단축하여 비용을 줄이고, 병목 공정에 투입하십시오.<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<strong>▶ 한계 돌파 모의연산:</strong> ${addProductionText}`;
+        msgBox.style.background = 'rgba(248, 113, 113, 0.05)';
         msgBox.style.borderColor = 'rgba(248, 113, 113, 0.2)';
     } else {
-        msgBox.innerHTML = `🎉 <strong>AI 진단 결과:</strong> 현재 입력된 리소스 리소스로 경영 목표(${target.toLocaleString()}개)를 무사히 달성할 수 있습니다.<br>
-        모든 공정의 Capa가 목표치 이상을 상회하고 있어 여유 상태입니다.`;
-        msgBox.style.background = 'rgba(52, 211, 153, 0.1)';
+        diagText = `✅ <strong>진단:</strong> 모든 공정의 Capa가 목표치 이상을 상회하고 있어 여유 상태입니다. (경영 목표 무사 달성 예측)<br>`;
+        if(slackPct > 10) {
+            diagText += `&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;가장 여유 있는 <strong>[${fastestInfo.process}]</strong> 공정은 목표대비 <strong>${slackPct}%의 잉여(Slack) 능력</strong>을 낭비 중입니다.`;
+        }
+        solText = `💡 <strong>솔루션:</strong> 잉여 자원이 가장 큰 공정의 가동 시간을 선제적으로 줄여 전력비 및 교대근무 수당을 절감하십시오.`;
+        msgBox.style.background = 'rgba(52, 211, 153, 0.05)';
         msgBox.style.borderColor = 'rgba(52, 211, 153, 0.2)';
     }
+
+    msgBox.innerHTML = `<div style="margin-bottom:16px;">${diagText}</div><div>${solText}</div>`;
 }
 
 function renderSettings() { 
