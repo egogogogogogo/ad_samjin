@@ -22,10 +22,14 @@ jobs:
         run: npm install
 
       - name: Create clasprc.json
-        run: echo "${{ secrets.CLASPRC_JSON }}" > ~/.clasprc.json
+        env:
+          CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
+        run: echo "$CLASPRC_JSON" > ~/.clasprc.json
 
       - name: Create clasp.json
-        run: echo "{\"scriptId\":\"${{ secrets.CLASP_SCRIPT_ID }}\",\"rootDir\":\"./src/backend\"}" > .clasp.json
+        env:
+          SCRIPT_ID: ${{ secrets.CLASP_SCRIPT_ID }}
+        run: echo "{\"scriptId\":\"$SCRIPT_ID\",\"rootDir\":\"./src/backend\"}" > .clasp.json
 
       - name: Push to Apps Script
         run: npx clasp push -f
