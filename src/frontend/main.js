@@ -100,11 +100,10 @@ function createFilterUX() {
         state.filterValue = v;
         html = `<div class="input-with-icon"><input type="date" class="editable-input filter-val" value="${v}"></div>`;
     } else if (state.timeframe === 'weekly') {
-        const lbl = formatFilterLabel(state.filterValue, 'weekly');
-        const showLbl = state.filterValue ? lbl : '주간 선택';
-        html = `<div class="input-with-icon" style="position:relative;">
-            <div style="position:absolute; left:12px; top:50%; transform:translateY(-50%); pointer-events:none; font-family:var(--sans); font-size:12px; white-space:nowrap; background:var(--input-bg); padding-right:10px;">📅 ${showLbl}</div>
-            <input type="week" class="editable-input filter-val" value="${state.filterValue}" style="color:transparent; width:150px;">
+        const lbl = state.filterValue ? `(${formatFilterLabel(state.filterValue, 'weekly')})` : '';
+        html = `<div style="display:inline-flex; align-items:center; gap:8px;">
+            <div class="input-with-icon"><input type="week" class="editable-input filter-val" value="${state.filterValue}"></div>
+            <span style="font-size:11px; color:var(--accent); font-weight:600;">${lbl}</span>
         </div>`;
     } else if (state.timeframe === 'monthly') {
         let v = state.filterValue.length !== 7 ? `${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2,'0')}` : state.filterValue;
@@ -460,6 +459,14 @@ function handleSort(key) {
 function renderLineBalancing() {
     if(!state.data || !state.data.lineBalance) return;
     const lb = state.data.lineBalance;
+    if(lb.error) {
+        document.getElementById('plan-simulator-table').innerHTML = `<tr><td colspan="6" style="padding:40px; color:var(--danger); text-align:center;">${lb.msg} (구글 시트 탭 이름을 확인해주세요)</td></tr>`;
+        document.getElementById('pb-target-qty').innerText = "오류";
+        document.getElementById('pb-actual-qty').innerText = "오류";
+        document.getElementById('pb-achieve-rate').innerText = "오류";
+        return;
+    }
+
     document.getElementById('pb-target-qty').innerText = Number(lb.targetQty||0).toLocaleString();
     document.getElementById('pb-actual-qty').innerText = Number(lb.actualQty||0).toLocaleString();
     const rate = Math.round(Number(lb.achieveRate||0) * 100);

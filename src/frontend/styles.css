@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=Outfit:wght@300;400;600&family=Noto+Sans+KR:wght@300;400;500;700&display=swap');
+ï»¿@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=Outfit:wght@300;400;600&family=Noto+Sans+KR:wght@300;400;500;700&display=swap');
 
 :root {
   --bg: #0b0e14;
@@ -431,7 +431,7 @@ tr:hover td {
 
 .input-with-icon { position:relative; display:inline-flex; align-items:center; }
 .input-with-icon input, .input-with-icon select { padding-right: 20px; cursor: pointer; }
-.input-with-icon::after { content: '¡å'; position:absolute; right:10px; font-size:10px; color:var(--accent); pointer-events:none; }
+
 
 /* Line Balancing Planner */
 .plan-hero { display:flex; gap:20px; align-items:center; padding:16px 24px; background:linear-gradient(90deg, rgba(37,99,235,0.1), transparent); border-bottom:1px solid var(--border); }

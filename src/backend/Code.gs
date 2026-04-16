@@ -282,8 +282,10 @@ function extractCapData(raw) {
 }
 
 function fetchLineBalance(ss) {
-  const sh = ss.getSheetByName('생산계획 관리') || ss.getSheetByName('삼진_Gasket 생산계획');
-  if (!sh) return { error: "Sheet not found" };
+  // 어떤 형태든 (공백 포함) "생산계획"이라는 단어가 들어간 시트를 스마트하게 찾아냅니다. 
+  const sh = ss.getSheets().find(s => s.getName().replace(/\s/g, '').includes('생산계획'));
+  if (!sh) return { error: true, msg: "생산계획 관련 시트를 못 찾았습니다." };
+  
   const v = sh.getDataRange().getValues();
   while(v.length <= 25) v.push([]); // Pad empty rows to avoid crashes
   
