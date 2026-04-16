@@ -53,11 +53,21 @@ function initApp() {
         });
     });
 
-    // Timeframe Strategy (Shared for Dash & Realtime)
     document.querySelectorAll('.tf-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
             const tf = e.target.getAttribute('data-tf');
             state.timeframe = tf;
+            
+            const d = new Date();
+            if(tf === 'daily') state.filterValue = d.toISOString().split('T')[0];
+            else if(tf === 'weekly') {
+                const s = new Date(d.getFullYear(), 0, 1);
+                const w = Math.ceil((((d - s) / 86400000) + s.getDay() + 1) / 7);
+                state.filterValue = `${d.getFullYear()}-W${String(w).padStart(2,'0')}`;
+            }
+            else if(tf === 'monthly') state.filterValue = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+            else if(tf === 'annual') state.filterValue = d.getFullYear().toString();
+
             document.querySelectorAll('.tf-btn').forEach(b => b.classList.remove('active'));
             document.querySelectorAll(`.tf-btn[data-tf="${tf}"]`).forEach(b => b.classList.add('active'));
             buildDynamicFilterUI();
@@ -100,11 +110,9 @@ function createFilterUX() {
         state.filterValue = v;
         html = `<div class="input-with-icon"><input type="date" class="editable-input filter-val" value="${v}"></div>`;
     } else if (state.timeframe === 'weekly') {
-        const lbl = state.filterValue ? `(${formatFilterLabel(state.filterValue, 'weekly')})` : '';
-        html = `<div style="display:inline-flex; align-items:center; gap:8px;">
-            <div class="input-with-icon"><input type="week" class="editable-input filter-val" value="${state.filterValue}"></div>
-            <span style="font-size:11px; color:var(--accent); font-weight:600;">${lbl}</span>
-        </div>`;
+        let v = state.filterValue.includes('-W') ? state.filterValue : `${new Date().getFullYear()}-W01`;
+        state.filterValue = v;
+        html = `<div class="input-with-icon"><input type="week" class="editable-input filter-val" value="${v}"></div>`;
     } else if (state.timeframe === 'monthly') {
         let v = state.filterValue.length !== 7 ? `${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2,'0')}` : state.filterValue;
         state.filterValue = v;

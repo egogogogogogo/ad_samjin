@@ -33,3 +33,6 @@ jobs:
 
       - name: Push to Apps Script
         run: npx clasp push -f
+
+      - name: Deploy to Web App
+        run: npx clasp deploy -d "Auto-deployed via GitHub Actions"
