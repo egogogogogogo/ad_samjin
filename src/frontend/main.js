@@ -686,8 +686,14 @@ async function saveLineBalance() {
         await fetch(state.apiUrl, { method:'POST', body: JSON.stringify({type:'SAVE_LINE_BALANCE', payload: state.simulators}) });
         log('라인 밸런싱 모의 결과가 클라우드에 영구 적용(저장)되었습니다.');
         btn.innerText = '시뮬레이션 클라우드 저장'; btn.disabled = false;
+        alert('구글 시트(생산계획 관리)에 시뮬레이션 설정이 성공적으로 저장되었습니다!');
         fetchData(); // reload fresh data
-    } catch(e) { log('저장 실패', 'var(--danger)'); }
+    } catch(e) { 
+        log('저장 실패', 'var(--danger)'); 
+        alert('저장에 실패했습니다. 네트워크 상태나 구글 시트를 확인해주세요.');
+        const btn = document.getElementById('btn-save-plan');
+        if(btn) { btn.innerText = '시뮬레이션 클라우드 저장'; btn.disabled = false; }
+    }
 }
 
 function switchTab(id) {
