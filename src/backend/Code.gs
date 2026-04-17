@@ -3,13 +3,22 @@
  * 가이드: [raw data] 분석 -> [Plan 양방향 연동] -> [장비별 상세 모니터링]
  */
 
-const SECRETS = {
-  SHEET_ID: '1K9KKc3a6_RmxcE-eD6Roj9DnZt3t2dhkGlEyg4JhiCg'
+// 시스템 구동 스크립트 속성 읽기 헬퍼 (하드코딩 제거)
+const getParam = (key) => {
+  const val = PropertiesService.getScriptProperties().getProperty(key);
+  return val;
+};
+
+// 범용 PMS 구동을 위한 핵심 연결 고리
+const getSheetId = () => {
+  const id = getParam('SHEET_ID');
+  if (!id) throw new Error("SHEET_ID 환경변수가 설정되지 않았습니다. Apps Script 속성을 확인하세요.");
+  return id;
 };
 
 // ── 1. Web App API (doGet: 데이터 읽기) ─────────────────────────
 function doGet(e) {
-  const ss = SpreadsheetApp.openById(SECRETS.SHEET_ID);
+  const ss = SpreadsheetApp.openById(getSheetId());
   const fetchData = (name) => {
     const sh = ss.getSheetByName(name);
     if (!sh) return [];
@@ -53,7 +62,7 @@ function doGet(e) {
 
 // ── 2. Web App API (doPost: 데이터 저장) ────────────────────────
 function doPost(e) {
-  const ss = SpreadsheetApp.openById(SECRETS.SHEET_ID);
+  const ss = SpreadsheetApp.openById(getSheetId());
   const params = JSON.parse(e.postData.contents);
   
   if (params.type === 'SAVE_PLAN') {
@@ -88,17 +97,29 @@ function parseIntegratedRawData(ss) {
 
   // 헤더 탐색 및 매핑 (이름 기준)
   const headers = data[1].map(h => String(h).trim()); // 2행을 헤더로 가정
+  
+  // 외부 동적 맵퍼 설정 불러오기 (PropertiesService 연동 - 없을 시 기존 기본값 Fallback)
+  const mappingStr = getParam('COLUMN_MAPPING');
+  let mapObj = {};
+  if (mappingStr) { try { mapObj = JSON.parse(mappingStr); } catch(e) {} }
+
+  const M = (key, def) => mapObj[key] || def;
+
   const idx = {
-    month: headers.indexOf('월'),
-    date: headers.indexOf('날짜'),
-    seong: headers.indexOf('성형_총계'),
-    jorip: headers.indexOf('조립_총계'),
-    reel: headers.indexOf('릴_총계'),
-    final: headers.indexOf('최종_총계'),
-    defect: headers.indexOf('불량_총계'),
-    sq: headers.indexOf('찌그러짐'), sc: headers.indexOf('스크레치'), co: headers.indexOf('오염'),
-    sp: headers.indexOf('스프링'), ti: headers.indexOf('기울어짐'), et: headers.indexOf('기타'),
-    remark: headers.indexOf('비고')
+    month: headers.indexOf(M('month', '월')),
+    date: headers.indexOf(M('date', '날짜')),
+    seong: headers.indexOf(M('seong', '성형_총계')),
+    jorip: headers.indexOf(M('jorip', '조립_총계')),
+    reel: headers.indexOf(M('reel', '릴_총계')),
+    final: headers.indexOf(M('final', '최종_총계')),
+    defect: headers.indexOf(M('defect', '불량_총계')),
+    sq: headers.indexOf(M('sq', '찌그러짐')), 
+    sc: headers.indexOf(M('sc', '스크레치')), 
+    co: headers.indexOf(M('co', '오염')),
+    sp: headers.indexOf(M('sp', '스프링')), 
+    ti: headers.indexOf(M('ti', '기울어짐')), 
+    et: headers.indexOf(M('et', '기타')),
+    remark: headers.indexOf(M('remark', '비고'))
   };
 
   // 만약 헤더 이름이 다를 경우 대비하여 기본 인덱스 보정 (v7.0 호환)
@@ -163,7 +184,7 @@ function parseIntegratedRawData(ss) {
 
 // ── 4. 기타 필수 엔진 (v8.0 로직 업데이트) ───────────────────────────
 function runMonitoringV3() {
-  const ss = SpreadsheetApp.openById(SECRETS.SHEET_ID);
+  const ss = SpreadsheetApp.openById(getSheetId());
   const raw = parseIntegratedRawData(ss);
   if (!raw || raw.length === 0) return;
 
