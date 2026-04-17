@@ -36,3 +36,9 @@ jobs:
 
       - name: Deploy to Web App
         run: npx clasp deploy -d "Auto-deployed via GitHub Actions"
+
+      - name: Deploy Frontend to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./src/frontend
