@@ -71,17 +71,17 @@ jobs:
           fi
           
           if [ -z "$URL" ]; then
-            echo "::warning::Extraction failed. Using secret API_URL fallback."
+            echo "::notice::Automated URL extraction found no value. Using secret API_URL."
             URL="${{ secrets.API_URL }}"
           fi
-          
+
           if [ -z "$URL" ]; then
-            echo "::error::No API URL found anywhere. Config might be broken."
-            echo "WEB_APP_URL=https://api.placeholder.com" >> $GITHUB_ENV
-          else
-            echo "WEB_APP_URL=$URL" >> $GITHUB_ENV
-            echo "✅ FINAL WEB_APP_URL: $URL"
+             echo "❌ Error: API_URL extraction failed and no secret found."
+             exit 1
           fi
+
+          echo "Final WEB_APP_URL: $URL"
+          echo "WEB_APP_URL=$URL" >> $GITHUB_ENV
 
       - name: Generate config.js
         run: |

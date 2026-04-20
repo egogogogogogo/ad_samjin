@@ -4,8 +4,8 @@
  */
 const CONFIG = {
     // 앱 시작 시 사용할 기본 API URL (GitHub Actions에서 자동 주입 가능)
-    apiUrl: '', 
-    
+    apiUrl: 'https://script.google.com/macros/s/AKfycbzebbOMTwtscn23_-vao0hLCmtLYdDVPOQxj33DMuG5p6o5Hcuz2Tlb1hGokXNRtKrW/exec', 
+
     // 기본 임계치 설정 (서버 데이터가 없을 경우 사용)
     thresholds: {
         ppm: 500,
