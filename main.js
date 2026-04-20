@@ -359,10 +359,13 @@ function handleFileUpload(file) {
         const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
         const rows = XLSX.utils.sheet_to_json(firstSheet, { header: 1 });
         
-        if (rows.length < 3) { alert('데이터가 너무 적거나 형식이 맞지 않습니다. (최소 3행 이상 필요)'); return; }
+        log(`파일 로드 완료: 총 ${rows.length - 2}행의 데이터를 발견했습니다. (전송 최적화 중...)`, 'var(--success)');
         
-        log(`파일 로드 완료: 총 ${rows.length - 2}행의 데이터를 발견했습니다.`, 'var(--success)');
-        state.uploadedRows = rows;
+        // 빈 행 및 데이터가 없는 행 필터링 (최적화)
+        const cleanedRows = rows.filter(row => row && row.length > 0 && row.some(cell => cell !== null && cell !== undefined && cell !== ''));
+        console.log(`최적화 결과: ${rows.length}행 -> ${cleanedRows.length}행`);
+        
+        state.uploadedRows = cleanedRows;
         renderUploadPreview();
     };
     reader.readAsArrayBuffer(file);
