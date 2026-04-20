@@ -356,18 +356,39 @@ function updateRawDataSmartSync(ss, payloadRows) {
 
   const rowsToAppend = payloadRows.filter(row => {
     let date = row[3];
-    if (!date || date === '날짜' || date === 'date' || date === '연도/월/일') return false;
+    if (!date) return false;
     
-    let dStr;
+    // 헤더 및 제목행 완전 제외 강화
+    const dateStr = String(date).trim();
+    if (dateStr === '날짜' || dateStr === 'date' || dateStr === '연도/월/일') return false;
+    
+    let dStr = '';
     try {
-      dStr = date instanceof Date ? Utilities.formatDate(date, 'Asia/Seoul', 'yyyy-MM-dd') : String(date).split('T')[0];
-      // yyyy-MM-dd 또는 yyyy.MM.dd 형식이 아니면 일단 거름 (헤더 방지)
-      if (!/^\d{4}[\-\.]\d{2}[\-\.]\d{2}/.test(dStr)) return false;
+      if (date instanceof Date) {
+        dStr = Utilities.formatDate(date, 'Asia/Seoul', 'yyyy-MM-dd');
+      } else if (typeof date === 'number') {
+        // Excel Serial Date (45402 등) 대응: 1899-12-30 기준
+        const d = new Date((date - 25569) * 86400 * 1000);
+        dStr = Utilities.formatDate(d, 'Asia/Seoul', 'yyyy-MM-dd');
+      } else if (typeof date === 'string') {
+        // "2024-04-20T00:00:00.000Z" 또는 "2024.04.20" 등 다양한 형식 대응
+        let clean = date.split('T')[0].replace(/\./g, '-').replace(/\//g, '-');
+        if (/^\d{4}-\d{2}-\d{2}/.test(clean)) {
+          dStr = clean;
+        } else {
+          // 기타 형식 (예: 24.04.20) 시도
+          const d = new Date(clean);
+          if (!isNaN(d.getTime())) dStr = Utilities.formatDate(d, 'Asia/Seoul', 'yyyy-MM-dd');
+        }
+      }
+      
+      // 최종 검증: yyyy-mm-dd 형식인지 확인
+      if (!/^\d{4}-\d{2}-\d{2}/.test(dStr)) return false;
     } catch(e) { return false; }
 
-    const k = `${dStr.replace(/\./g, '-')}_${row[7]}`;
+    const k = `${dStr}_${row[7]}`;
     if (existingKeys.has(k)) return false;
-    existingKeys.add(k); // 이번 업로드 묶음 내에서의 중복도 방지
+    existingKeys.add(k);
     return true;
   });
 
