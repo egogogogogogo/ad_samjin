@@ -356,9 +356,16 @@ function updateRawDataSmartSync(ss, payloadRows) {
 
   const rowsToAppend = payloadRows.filter(row => {
     let date = row[3];
-    if (!date) return false;
-    let dStr = date instanceof Date ? Utilities.formatDate(date, 'Asia/Seoul', 'yyyy-MM-dd') : String(date);
-    const k = `${dStr}_${row[7]}`;
+    if (!date || date === '날짜' || date === 'date' || date === '연도/월/일') return false;
+    
+    let dStr;
+    try {
+      dStr = date instanceof Date ? Utilities.formatDate(date, 'Asia/Seoul', 'yyyy-MM-dd') : String(date).split('T')[0];
+      // yyyy-MM-dd 또는 yyyy.MM.dd 형식이 아니면 일단 거름 (헤더 방지)
+      if (!/^\d{4}[\-\.]\d{2}[\-\.]\d{2}/.test(dStr)) return false;
+    } catch(e) { return false; }
+
+    const k = `${dStr.replace(/\./g, '-')}_${row[7]}`;
     if (existingKeys.has(k)) return false;
     existingKeys.add(k); // 이번 업로드 묶음 내에서의 중복도 방지
     return true;
