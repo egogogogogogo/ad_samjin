@@ -21,80 +21,92 @@ const getSheetId = () => {
 
 // ── 1. Web App API (doGet: 데이터 읽기) ─────────────────────────
 function doGet(e) {
-  const ss = SpreadsheetApp.openById(getSheetId());
-  const fetchData = (name) => {
-    const sh = ss.getSheetByName(name);
-    if (!sh) return [];
-    const v = sh.getDataRange().getValues();
-    if (v.length < 2) return [];
-    const h = v[0].map(k => String(k).trim());
-    return v.slice(1)
-      .filter(r => r[0] !== '' || r[1] !== '')
-      .map(r => {
-        const o = {};
-        h.forEach((k, i) => {
-          let val = r[i];
-          if (val instanceof Date) val = Utilities.formatDate(val, 'Asia/Seoul', 'yyyy-MM-dd');
-          if (typeof val === 'string' && !isNaN(val) && val !== '') val = Number(val);
-          o[k] = (val === null || val === undefined) ? '' : val;
+  try {
+    const ss = SpreadsheetApp.openById(getSheetId());
+    const fetchData = (name) => {
+      const sh = ss.getSheetByName(name);
+      if (!sh) return [];
+      const v = sh.getDataRange().getValues();
+      if (v.length < 2) return [];
+      const h = v[0].map(k => String(k).trim());
+      return v.slice(1)
+        .filter(r => r[0] !== '' || r[1] !== '')
+        .map(r => {
+          const o = {};
+          h.forEach((k, i) => {
+            let val = r[i];
+            if (val instanceof Date) val = Utilities.formatDate(val, 'Asia/Seoul', 'yyyy-MM-dd');
+            if (typeof val === 'string' && !isNaN(val) && val !== '') val = Number(val);
+            o[k] = (val === null || val === undefined) ? '' : val;
+          });
+          return o;
         });
-        return o;
-      });
-  };
+    };
 
-  const props = PropertiesService.getScriptProperties().getProperties();
-  const thresholds = {
-    ppm: props.ppm || DEFAULT_THRESHOLDS.ppm,
-    monthlyTarget: props.monthlyTarget || DEFAULT_THRESHOLDS.monthlyTarget,
-    defectLimit: props.defectLimit || DEFAULT_THRESHOLDS.defectLimit,
-    capMin: props.capMin || DEFAULT_THRESHOLDS.capMin
-  };
+    const props = PropertiesService.getScriptProperties().getProperties();
+    const thresholds = {
+      ppm: props.ppm || DEFAULT_THRESHOLDS.ppm,
+      monthlyTarget: props.monthlyTarget || DEFAULT_THRESHOLDS.monthlyTarget,
+      defectLimit: props.defectLimit || DEFAULT_THRESHOLDS.defectLimit,
+      capMin: props.capMin || DEFAULT_THRESHOLDS.capMin
+    };
 
-  return ContentService.createTextOutput(JSON.stringify({
-    daily: fetchData('일별 생산현황'),
-    weekly: fetchData('주별 생산현황'),
-    monthly: fetchData('월별 생산현황'),
-    annual: fetchData('연간 실적 합계')[0] || {},
-    plan: fetchData('plan'),
-    lineBalance: fetchLineBalance(ss),
-    thresholds: thresholds,
-    meta: fetchData('meta')[0] || {}
-  })).setMimeType(ContentService.MimeType.JSON);
+    return ContentService.createTextOutput(JSON.stringify({
+      status: 'success',
+      daily: fetchData('일별 생산현황'),
+      weekly: fetchData('주별 생산현황'),
+      monthly: fetchData('월별 생산현황'),
+      annual: fetchData('연간 실적 합계')[0] || {},
+      plan: fetchData('plan'),
+      lineBalance: fetchLineBalance(ss),
+      thresholds: thresholds,
+      meta: fetchData('meta')[0] || {}
+    })).setMimeType(ContentService.MimeType.JSON);
+  } catch (err) {
+    return ContentService.createTextOutput(JSON.stringify({
+      status: 'error',
+      msg: '초기화 에러: ' + err.toString()
+    })).setMimeType(ContentService.MimeType.JSON);
+  }
 }
 
 // ── 2. Web App API (doPost: 데이터 저장/동기화) ────────────────────────
 function doPost(e) {
-  const ss = SpreadsheetApp.openById(getSheetId());
-  const params = JSON.parse(e.postData.contents);
-  
-  if (params.type === 'SAVE_PLAN') {
-    const sh = ss.getSheetByName('plan');
-    const data = params.payload;
-    if (sh && data.length > 0) {
-      sh.getRange(2, 1, sh.getLastRow(), sh.getLastColumn()).clearContent();
-      sh.getRange(2, 1, data.length, data[0].length).setValues(data);
+  try {
+    const ss = SpreadsheetApp.openById(getSheetId());
+    const params = JSON.parse(e.postData.contents);
+    
+    if (params.type === 'SAVE_PLAN') {
+      const sh = ss.getSheetByName('plan');
+      const data = params.payload;
+      if (sh && data.length > 0) {
+        sh.getRange(2, 1, sh.getLastRow(), sh.getLastColumn()).clearContent();
+        sh.getRange(2, 1, data.length, data[0].length).setValues(data);
+      }
+    } else if (params.type === 'SAVE_LINE_BALANCE') {
+      const sh = ss.getSheetByName('생산계획 관리');
+      const b = params.payload;
+      if(sh && b.length === 4) {
+        const writeData = b.map(r => [r.timeCapa, r.runTime, r.machines, r.days, r.personnel]);
+        sh.getRange(10, 2, 4, 5).setValues(writeData);
+        SpreadsheetApp.flush();
+      }
+    } else if (params.type === 'SAVE_CONFIG') {
+      PropertiesService.getScriptProperties().setProperties(params.payload);
+    } else if (params.type === 'UPDATE_RAW_DATA') {
+      const status = updateRawDataRefresh(ss, params.payload);
+      return ContentService.createTextOutput(JSON.stringify(status))
+        .setMimeType(ContentService.MimeType.JSON);
     }
-  } else if (params.type === 'SAVE_LINE_BALANCE') {
-    const sh = ss.getSheetByName('생산계획 관리');
-    const b = params.payload;
-    if(sh && b.length === 4) {
-      const writeData = b.map(r => [r.timeCapa, r.runTime, r.machines, r.days, r.personnel]);
-      sh.getRange(10, 2, 4, 5).setValues(writeData);
-      SpreadsheetApp.flush();
-    }
-  } else if (params.type === 'SAVE_CONFIG') {
-    PropertiesService.getScriptProperties().setProperties(params.payload);
-  } else if (params.type === 'UPDATE_RAW_DATA') {
-    const status = updateRawDataRefresh(ss, params.payload);
-    return ContentService.createTextOutput(JSON.stringify(status))
-      .setMimeType(ContentService.MimeType.JSON);
-  }
 
-  // 알 수 없는 요청 타입에 대한 기본 에러 반환
-  return ContentService.createTextOutput(JSON.stringify({
-    status: 'error', 
-    msg: '알 수 없는 요청 타입입니다: ' + params.type 
-  })).setMimeType(ContentService.MimeType.JSON);
+    return ContentService.createTextOutput(JSON.stringify({status: 'success'}))
+      .setMimeType(ContentService.MimeType.JSON);
+  } catch (err) {
+    return ContentService.createTextOutput(JSON.stringify({
+      status: 'error',
+      msg: '저장 에러: ' + err.toString()
+    })).setMimeType(ContentService.MimeType.JSON);
+  }
 }
 
 // ── 3. 상세 파싱 (표준 고정 인덱스 기반 단순화) ───────────────────────────
