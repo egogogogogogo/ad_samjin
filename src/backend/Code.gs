@@ -85,14 +85,16 @@ function doPost(e) {
   } else if (params.type === 'SAVE_CONFIG') {
     PropertiesService.getScriptProperties().setProperties(params.payload);
   } else if (params.type === 'UPDATE_RAW_DATA') {
-    // [개선] 기존 SmartSync 대신 단순 Refresh 방식 호출
     const status = updateRawDataRefresh(ss, params.payload);
     return ContentService.createTextOutput(JSON.stringify(status))
       .setMimeType(ContentService.MimeType.JSON);
   }
 
-  return ContentService.createTextOutput(JSON.stringify({status: 'success'}))
-    .setMimeType(ContentService.MimeType.JSON);
+  // 알 수 없는 요청 타입에 대한 기본 에러 반환
+  return ContentService.createTextOutput(JSON.stringify({
+    status: 'error', 
+    msg: '알 수 없는 요청 타입입니다: ' + params.type 
+  })).setMimeType(ContentService.MimeType.JSON);
 }
 
 // ── 3. 상세 파싱 (표준 고정 인덱스 기반 단순화) ───────────────────────────
