@@ -16,7 +16,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
 
       - name: Install dependencies
         run: npm install
@@ -37,10 +37,17 @@ jobs:
       - name: Deploy to Web App
         id: deploy_apps_script
         run: |
-          DEPLOY_OUTPUT=$(npx clasp deploy -d "Auto-deployed via GitHub Actions")
+          DEPLOY_OUTPUT=$(npx clasp deploy -d "Auto-deployed via GitHub Actions") || { echo "Clasp deploy failed"; exit 1; }
           echo "$DEPLOY_OUTPUT"
-          URL=$(echo "$DEPLOY_OUTPUT" | grep -o "https://script.google.com/macros/s/[^ ]*/exec" | head -n 1)
-          if [ -z "$URL" ]; then URL="${{ secrets.API_URL }}"; fi
+          
+          # grep이 매칭 결과를 찾지 못해도 에러(1)를 내지 않도록 || true 추가
+          URL=$(echo "$DEPLOY_OUTPUT" | grep -o "https://script.google.com/macros/s/[^ ]*/exec" | head -n 1 || true)
+          
+          if [ -z "$URL" ]; then
+            echo "Warning: Web App URL not found in output. Falling back to secrets.API_URL"
+            URL="${{ secrets.API_URL }}"
+          fi
+          
           echo "WEB_APP_URL=$URL" >> $GITHUB_ENV
 
       - name: Generate config.js
