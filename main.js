@@ -327,19 +327,7 @@ function handleFileUpload(file) {
         
         if (rows.length < 3) { alert('데이터가 너무 적거나 형식이 맞지 않습니다. (최소 3행 이상 필요)'); return; }
         
-        // 지능형 컬럼 감지 (프론트엔드 진단)
-        let colInfo = { date: -1, final: -1 };
-        for(let i=0; i<Math.min(3, rows.length); i++) {
-            const h = rows[i].map(v => String(v).trim());
-            const d = h.findIndex(v => v.includes('날짜') || v === 'date' || v === '연도/월/일');
-            const f = h.findIndex(v => (v.includes('최종') && v.includes('총계')) || v.includes('최종_총계'));
-            if(d !== -1) colInfo.date = d;
-            if(f !== -1) colInfo.final = f;
-        }
-
-        const colLetters = (idx) => idx === -1 ? '?' : String.fromCharCode(65 + idx);
-        log(`파일 분석 완료: 날짜(${colLetters(colInfo.date)}열), 생산량(${colLetters(colInfo.final)}열) 감지됨`, colInfo.date !== -1 && colInfo.final !== -1 ? 'var(--success)' : 'var(--danger)');
-
+        log(`파일 로드 완료: 총 ${rows.length - 2}행의 데이터를 발견했습니다.`, 'var(--success)');
         state.uploadedRows = rows;
         renderUploadPreview();
     };
@@ -372,8 +360,10 @@ function renderUploadPreview() {
 
 async function saveRawData() {
     if (!state.apiUrl || !state.uploadedRows.length) return;
+    if (!confirm('기존 데이터를 모두 삭제하고 이 파일의 내용으로 "새로고침" 하시겠습니까?')) return;
+    
     const btn = document.getElementById('btn-save-raw');
-    btn.disabled = true; btn.innerText = '저장 중...';
+    btn.disabled = true; btn.innerText = '데이터 교체 중...';
     
     try {
         const res = await fetch(state.apiUrl, {
@@ -382,8 +372,8 @@ async function saveRawData() {
         });
         const result = await res.json();
         if (result.status === 'success') {
-            alert(`업로드 성공!\n신규 추가: ${result.added}건\n중복 제외: ${result.skipped}건`);
-            log(`클라우드 동기화 완료 (신규:${result.added}, 제외:${result.skipped})`);
+            alert(`업로드 성공!\n총 ${result.added}건의 데이터로 새로고침되었습니다.`);
+            log(`클라우드 데이터 새로고침 완료 (총 ${result.added}건)`);
             
             // 초기화
             state.uploadedRows = [];
