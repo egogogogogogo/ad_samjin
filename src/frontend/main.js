@@ -327,8 +327,19 @@ function handleFileUpload(file) {
         
         if (rows.length < 3) { alert('데이터가 너무 적거나 형식이 맞지 않습니다. (최소 3행 이상 필요)'); return; }
         
-        // 1~2행은 무시하고 3행부터 실데이터로 간주 (v8.0 표준 기준)
-        // 하지만 백엔드의 updateRawDataSmartSync는 전체 2차원 배열을 받아 2번 인덱스부터 처리하므로 그대로 보관
+        // 지능형 컬럼 감지 (프론트엔드 진단)
+        let colInfo = { date: -1, final: -1 };
+        for(let i=0; i<Math.min(3, rows.length); i++) {
+            const h = rows[i].map(v => String(v).trim());
+            const d = h.findIndex(v => v.includes('날짜') || v === 'date' || v === '연도/월/일');
+            const f = h.findIndex(v => (v.includes('최종') && v.includes('총계')) || v.includes('최종_총계'));
+            if(d !== -1) colInfo.date = d;
+            if(f !== -1) colInfo.final = f;
+        }
+
+        const colLetters = (idx) => idx === -1 ? '?' : String.fromCharCode(65 + idx);
+        log(`파일 분석 완료: 날짜(${colLetters(colInfo.date)}열), 생산량(${colLetters(colInfo.final)}열) 감지됨`, colInfo.date !== -1 && colInfo.final !== -1 ? 'var(--success)' : 'var(--danger)');
+
         state.uploadedRows = rows;
         renderUploadPreview();
     };

@@ -340,61 +340,81 @@ function updateRawDataSmartSync(ss, payloadRows) {
   if (!sh) return { status: 'error', msg: "'raw data' 시트를 찾을 수 없습니다." };
   
   const existingData = sh.getDataRange().getValues();
+  if (existingData.length < 2) return { status: 'error', msg: "시트에 헤더 정보가 부족합니다." };
+
+  // 1. 시트 내 헤더 인덱스 찾기 (유연한 검색)
+  const sheetHeaders = existingData[1].map(h => String(h).trim());
+  const sheetIdx = {
+    date: sheetHeaders.findIndex(h => h.includes('날짜') || h === 'date'),
+    final: sheetHeaders.findIndex(h => (h.includes('최종') && h.includes('총계')) || h.includes('최종_총계'))
+  };
+  
+  // 찾지 못했을 경우 기존 표준 인덱스(3, 7)로 폴백
+  if (sheetIdx.date === -1) sheetIdx.date = 3;
+  if (sheetIdx.final === -1) sheetIdx.final = 7;
+
+  // 2. 업로드 데이터(Payload) 내 헤더 인덱스 찾기
+  let payloadIdx = { date: -1, final: -1 };
+  for (let i = 0; i < Math.min(3, payloadRows.length); i++) {
+    const pHeaders = payloadRows[i].map(h => String(h).trim());
+    const d = pHeaders.findIndex(h => h.includes('날짜') || h === 'date' || h === '연도/월/일');
+    const f = pHeaders.findIndex(h => (h.includes('최종') && h.includes('총계')) || h.includes('최종_총계'));
+    if (d !== -1) payloadIdx.date = d;
+    if (f !== -1) payloadIdx.final = f;
+  }
+  
+  // 페이로드에서 못 찾으면 시트 인덱스 구성과 동일하다고 가정
+  if (payloadIdx.date === -1) payloadIdx.date = sheetIdx.date;
+  if (payloadIdx.final === -1) payloadIdx.final = sheetIdx.final;
+
   const existingKeys = new Set();
   
-  // 기존 데이터에서 키 생성 (2행 헤더, 3행부터 데이터)
-  // v7.0~8.0 레이아웃: 날짜=3번 인덱스, 최종_총계=7번 인덱스
+  // 기존 데이터에서 키 생성
   for (let i = 2; i < existingData.length; i++) {
     const row = existingData[i];
-    const date = row[3];
-    const final = row[7];
+    const date = row[sheetIdx.date];
+    const final = row[sheetIdx.final];
     if (date) {
-      const dStr = date instanceof Date ? Utilities.formatDate(date, 'Asia/Seoul', 'yyyy-MM-dd') : String(date);
+      const dStr = date instanceof Date ? Utilities.formatDate(date, 'Asia/Seoul', 'yyyy-MM-dd') : String(date).split('T')[0];
       existingKeys.add(`${dStr}_${final}`);
     }
   }
 
   const rowsToAppend = payloadRows.filter(row => {
-    let date = row[3];
+    let date = row[payloadIdx.date];
     if (!date) return false;
     
-    // 헤더 및 제목행 완전 제외 강화
+    // 헤더행 제외
     const dateStr = String(date).trim();
-    if (dateStr === '날짜' || dateStr === 'date' || dateStr === '연도/월/일') return false;
+    if (dateStr.includes('날짜') || dateStr.includes('date') || dateStr.includes('연도/월/일')) return false;
     
     let dStr = '';
     try {
       if (date instanceof Date) {
         dStr = Utilities.formatDate(date, 'Asia/Seoul', 'yyyy-MM-dd');
       } else if (typeof date === 'number') {
-        // Excel Serial Date (45402 등) 대응: 1899-12-30 기준
         const d = new Date((date - 25569) * 86400 * 1000);
         dStr = Utilities.formatDate(d, 'Asia/Seoul', 'yyyy-MM-dd');
       } else if (typeof date === 'string') {
-        // "2024-04-20T00:00:00.000Z" 또는 "2024.04.20" 등 다양한 형식 대응
         let clean = date.split('T')[0].replace(/\./g, '-').replace(/\//g, '-');
         if (/^\d{4}-\d{2}-\d{2}/.test(clean)) {
           dStr = clean;
         } else {
-          // 기타 형식 (예: 24.04.20) 시도
           const d = new Date(clean);
           if (!isNaN(d.getTime())) dStr = Utilities.formatDate(d, 'Asia/Seoul', 'yyyy-MM-dd');
         }
       }
-      
-      // 최종 검증: yyyy-mm-dd 형식인지 확인
       if (!/^\d{4}-\d{2}-\d{2}/.test(dStr)) return false;
     } catch(e) { return false; }
 
-    const k = `${dStr}_${row[7]}`;
+    const k = `${dStr}_${row[payloadIdx.final]}`;
     if (existingKeys.has(k)) return false;
-    existingKeys.add(k);
+    existingKeys.add(k); 
     return true;
   });
 
   if (rowsToAppend.length > 0) {
     sh.getRange(sh.getLastRow() + 1, 1, rowsToAppend.length, rowsToAppend[0].length).setValues(rowsToAppend);
-    // 데이터가 추가되었으므로 모니터링 로직(V3)을 실행하여 통계 탭들을 갱신합니다.
     runMonitoringV3();
   }
 
