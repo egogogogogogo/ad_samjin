@@ -4,7 +4,7 @@
 
 const state = {
     // 1순위: LocalStorage, 2순위: config.js (CONFIG)
-    apiUrl: localStorage.getItem('samjin_qms_api_url') || (typeof CONFIG !== 'undefined' ? CONFIG.apiUrl : ''),
+    apiUrl: (typeof CONFIG !== 'undefined' && CONFIG.apiUrl) ? CONFIG.apiUrl : (localStorage.getItem('samjin_qms_api_url') || ''),
     theme: localStorage.getItem('samjin_theme') || 'dark',
     activeTab: 'dashboard',
     activeDashTab: 'summary',
@@ -406,8 +406,9 @@ async function saveRawData() {
         });
         const result = await res.json();
         if (result.status === 'success') {
-            alert(`업로드 성공!\n총 ${result.added}건의 데이터로 새로고침되었습니다.`);
-            log(`클라우드 데이터 새로고침 완료 (총 ${result.added}건)`);
+            const addedCount = result.added !== undefined ? result.added : 0;
+            alert(`업로드 성공!\n총 ${addedCount}건의 데이터로 새로고침되었습니다.`);
+            log(`클라우드 데이터 새로고침 완료 (총 ${addedCount}건)`);
             
             // 초기화
             state.uploadedRows = [];
