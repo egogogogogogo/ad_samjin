@@ -87,9 +87,33 @@ function initApp() {
     const fi = document.getElementById('file-input');
     if(dz && fi) {
         dz.onclick = () => fi.click();
-        dz.ondragover = (e) => { e.preventDefault(); dz.style.borderColor = 'var(--accent)'; };
-        dz.ondragleave = () => { dz.style.borderColor = 'var(--border)'; };
-        dz.ondrop = (e) => { e.preventDefault(); dz.style.borderColor = 'var(--border)'; handleFileUpload(e.dataTransfer.files[0]); };
+        
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            dz.addEventListener(eventName, (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+            }, false);
+        });
+
+        dz.addEventListener('dragover', () => {
+            dz.style.borderColor = 'var(--accent)';
+            dz.style.background = 'rgba(56, 189, 248, 0.05)';
+        });
+
+        dz.addEventListener('dragleave', () => {
+            dz.style.borderColor = 'var(--border)';
+            dz.style.background = 'transparent';
+        });
+
+        dz.addEventListener('drop', (e) => {
+            dz.style.borderColor = 'var(--border)';
+            dz.style.background = 'transparent';
+            const files = e.dataTransfer.files;
+            if (files && files.length > 0) {
+                handleFileUpload(files[0]);
+            }
+        });
+
         fi.onchange = (e) => handleFileUpload(e.target.files[0]);
     }
     const btnSaveRaw = document.getElementById('btn-save-raw');
