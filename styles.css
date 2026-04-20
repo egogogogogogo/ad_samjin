@@ -1,4 +1,4 @@
-﻿@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=Outfit:wght@300;400;600&family=Noto+Sans+KR:wght@300;400;500;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=Outfit:wght@300;400;600&family=Noto+Sans+KR:wght@300;400;500;700&display=swap');
 
 :root {
   --bg: #0b0e14;
@@ -442,3 +442,31 @@ tr:hover td {
 
 .editable-input[type="date"], .editable-input[type="week"], .editable-input[type="month"] { color-scheme: dark; }
 [data-theme="light"] .editable-input { color-scheme: light; }
+
+/* Raw Data Upload UI */
+#drop-zone:hover {
+  background: rgba(56, 189, 248, 0.05);
+  border-color: var(--accent);
+}
+
+.bottleneck-bar-wrap { position:relative; }
+
+#preview-table td {
+  padding: 8px 12px;
+  font-size: 11px;
+}
+
+#preview-table th {
+  padding: 8px 12px;
+  font-size: 11px;
+  background: rgba(0, 0, 0, 0.5);
+}
+
+.upload-success-anim {
+  animation: pulseSuccess 1s infinite alternate;
+}
+
+@keyframes pulseSuccess {
+  from { box-shadow: 0 0 10px rgba(52, 211, 153, 0.2); }
+  to { box-shadow: 0 0 25px rgba(52, 211, 153, 0.5); }
+}

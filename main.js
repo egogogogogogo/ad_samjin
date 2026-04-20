@@ -3,20 +3,23 @@
  */
 
 const state = {
-    apiUrl: localStorage.getItem('samjin_qms_api_url') || '',
+    // 1순위: LocalStorage, 2순위: config.js (CONFIG)
+    apiUrl: localStorage.getItem('samjin_qms_api_url') || (typeof CONFIG !== 'undefined' ? CONFIG.apiUrl : ''),
     theme: localStorage.getItem('samjin_theme') || 'dark',
     activeTab: 'dashboard',
     activeDashTab: 'summary',
-    timeframe: 'monthly', // shared with realtime
+    timeframe: 'monthly',
     filterValue: '', 
     customFilter: { start: '', end: '' },
     activeSubTab: 'total',
     data: null,
-    thresholds: { ppm: 500, monthlyTarget: 4500000, defectLimit: 80, capMin: 410 },
+    // 기본 임계치는 CONFIG에서 가져오거나 하드코딩된 기본값 사용
+    thresholds: (typeof CONFIG !== 'undefined' ? { ...CONFIG.thresholds } : { ppm: 500, monthlyTarget: 4500000, defectLimit: 80, capMin: 410 }),
     sort: { key: 'date', order: 'asc' },
     charts: {},
     drillDown: { active: false, process: null },
-    simulators: [] // Line Balancing local state
+    simulators: [], 
+    uploadedRows: [] // Temporary storage for parsed Excel data
 };
 
 document.addEventListener('DOMContentLoaded', initApp);
@@ -77,6 +80,20 @@ function initApp() {
     document.getElementById('btn-refresh').addEventListener('click', fetchData);
     document.getElementById('btn-save-config').addEventListener('click', saveConfig);
     document.getElementById('btn-save-plan').addEventListener('click', saveLineBalance);
+    document.getElementById('btn-download-csv').addEventListener('click', downloadCSV);
+
+    // Upload Tab Events
+    const dz = document.getElementById('drop-zone');
+    const fi = document.getElementById('file-input');
+    if(dz && fi) {
+        dz.onclick = () => fi.click();
+        dz.ondragover = (e) => { e.preventDefault(); dz.style.borderColor = 'var(--accent)'; };
+        dz.ondragleave = () => { dz.style.borderColor = 'var(--border)'; };
+        dz.ondrop = (e) => { e.preventDefault(); dz.style.borderColor = 'var(--border)'; handleFileUpload(e.dataTransfer.files[0]); };
+        fi.onchange = (e) => handleFileUpload(e.target.files[0]);
+    }
+    const btnSaveRaw = document.getElementById('btn-save-raw');
+    if(btnSaveRaw) btnSaveRaw.onclick = saveRawData;
 
     const today = new Date();
     state.filterValue = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}`;
@@ -246,16 +263,130 @@ function log(msg, color = 'var(--success)') {
 }
 
 async function fetchData() {
-    if (!state.apiUrl) return;
+    if (!state.apiUrl) {
+        log('API URL이 설정되지 않았습니다. 설정을 확인하세요.', 'var(--warning)');
+        return;
+    }
     document.getElementById('update-ts').textContent = '동기화 중...';
     try {
         const res = await fetch(state.apiUrl);
+        if (!res.ok) throw new Error('서버 응답 오류');
         state.data = await res.json();
-        if (state.data.thresholds) state.thresholds = state.data.thresholds;
+        
+        // 서버에서 받은 임계치가 있다면 업데이트 (단, 로컬 저장값이 없을 경우에만 덮어쓰거나 선택적 병합 가능)
+        // 여기서는 서버 데이터를 최신 "기준값"으로 동기화합니다.
+        if (state.data.thresholds) {
+            state.thresholds = { ...state.thresholds, ...state.data.thresholds };
+        }
+        
         log(`데이터 연동 성공!`);
         renderUI();
         document.getElementById('update-ts').textContent = `최종 동기화: ${new Date().toLocaleTimeString()}`;
-    } catch (e) { log(`[통신 에러] ${e.message}`, 'var(--danger)'); }
+    } catch (e) { 
+        log(`[통신 에러] ${e.message}`, 'var(--danger)'); 
+        document.getElementById('update-ts').textContent = '동기화 실패';
+    }
+}
+
+function downloadCSV() {
+    if (!state.data || !state.data.daily) return;
+    const filterParams = state.timeframe === 'custom' ? state.customFilter : state.filterValue;
+    const { current } = getAggregatedData(state.timeframe, filterParams);
+    if (!current.length) { alert('다운로드할 데이터가 없습니다.'); return; }
+
+    const headers = Object.keys(current[0]);
+    const csvContent = [
+        headers.join(','),
+        ...current.map(row => headers.map(h => {
+            let v = row[h];
+            return typeof v === 'string' && v.includes(',') ? `"${v}"` : v;
+        }).join(','))
+    ].join('\n');
+
+    const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `samjin_qms_export_${state.filterValue}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    log('CSV 파일 다운로드가 시작되었습니다.');
+}
+
+function handleFileUpload(file) {
+    if (!file || !file.name.endsWith('.xlsx')) { alert('엑셀(.xlsx) 파일만 업로드 가능합니다.'); return; }
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(firstSheet, { header: 1 });
+        
+        if (rows.length < 3) { alert('데이터가 너무 적거나 형식이 맞지 않습니다. (최소 3행 이상 필요)'); return; }
+        
+        // 1~2행은 무시하고 3행부터 실데이터로 간주 (v8.0 표준 기준)
+        // 하지만 백엔드의 updateRawDataSmartSync는 전체 2차원 배열을 받아 2번 인덱스부터 처리하므로 그대로 보관
+        state.uploadedRows = rows;
+        renderUploadPreview();
+    };
+    reader.readAsArrayBuffer(file);
+}
+
+function renderUploadPreview() {
+    const rows = state.uploadedRows;
+    const container = document.getElementById('preview-card');
+    const summary = document.getElementById('upload-summary');
+    const summaryText = document.getElementById('upload-summary-text');
+    const saveBtn = document.getElementById('btn-save-raw');
+    const head = document.getElementById('preview-head');
+    const body = document.getElementById('preview-body');
+
+    container.style.display = 'block';
+    summary.style.display = 'block';
+    saveBtn.style.display = 'block';
+    
+    // 분석 요약 (단순 행 개수만 표기, 중복체크는 서버에서 수행)
+    summaryText.innerHTML = `✅ 파일 로드 성공: 총 <strong>${rows.length - 2}</strong> 건의 생산 데이터를 발견했습니다. (상단 2행 헤더 제외)`;
+
+    // 미리보기 (최대 20행)
+    const previewRows = rows.slice(0, 22); // 헤더 2행 + 데이터 20행
+    head.innerHTML = `<tr>${previewRows[1].map(h => `<th>${h || ''}</th>`).join('')}</tr>`;
+    body.innerHTML = previewRows.slice(2).map(r => `<tr>${r.map(v => `<td>${v || ''}</td>`).join('')}</tr>`).join('');
+    
+    log('파일 분석이 완료되었습니다. 미리보기를 확인하고 저장 버튼을 누르세요.');
+}
+
+async function saveRawData() {
+    if (!state.apiUrl || !state.uploadedRows.length) return;
+    const btn = document.getElementById('btn-save-raw');
+    btn.disabled = true; btn.innerText = '저장 중...';
+    
+    try {
+        const res = await fetch(state.apiUrl, {
+            method: 'POST',
+            body: JSON.stringify({ type: 'UPDATE_RAW_DATA', payload: state.uploadedRows })
+        });
+        const result = await res.json();
+        if (result.status === 'success') {
+            alert(`업로드 성공!\n신규 추가: ${result.added}건\n중복 제외: ${result.skipped}건`);
+            log(`클라우드 동기화 완료 (신규:${result.added}, 제외:${result.skipped})`);
+            
+            // 초기화
+            state.uploadedRows = [];
+            document.getElementById('preview-card').style.display = 'none';
+            document.getElementById('upload-summary').style.display = 'none';
+            btn.style.display = 'none';
+            fetchData(); // 최신 데이터로 리로드
+        } else {
+            throw new Error(result.msg || '서버 처리 오류');
+        }
+    } catch (e) {
+        alert('저장 실패: ' + e.message);
+        log('업로드 에러: ' + e.message, 'var(--danger)');
+    } finally {
+        btn.disabled = false; btn.innerText = '검증 완료 - 클라우드 저장 실행';
+    }
 }
 
 function renderUI() {
