@@ -232,9 +232,11 @@ function aggregateAnnual(rows) {
 function saveToSheetWithAutoCreate(ss, name, data) {
   if (!data || data.length === 0) return;
   let sh = ss.getSheetByName(name) || ss.insertSheet(name);
-  sh.clearContents();
+  
   const h = Object.keys(data[0]);
   const matrix = [h, ...data.map(r => h.map(k => r[k]))];
+  
+  sh.clearContents();
   sh.getRange(1, 1, matrix.length, h.length).setValues(matrix);
 }
 
