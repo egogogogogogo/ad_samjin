@@ -1,7 +1,10 @@
-/**
- * Samjin QMS - Integrated Bidirectional System (v7.0)
- * 가이드: [raw data] 분석 -> [Plan 양방향 연동] -> [장비별 상세 모니터링]
- */
+// 시스템 기본값 정의 (사용자 설정이 없을 경우의 Fallback)
+const DEFAULT_THRESHOLDS = {
+  ppm: 500,
+  monthlyTarget: 4500000,
+  defectLimit: 80,
+  capMin: 410
+};
 
 // 시스템 구동 스크립트 속성 읽기 헬퍼 (하드코딩 제거)
 const getParam = (key) => {
@@ -42,10 +45,10 @@ function doGet(e) {
   // 설정 관리 (ScriptProperties 활용)
   const props = PropertiesService.getScriptProperties().getProperties();
   const thresholds = {
-    ppm: props.ppm || 500,
-    monthlyTarget: props.monthlyTarget || 4500000,
-    defectLimit: props.defectLimit || 80,
-    capMin: props.capMin || 410
+    ppm: props.ppm || DEFAULT_THRESHOLDS.ppm,
+    monthlyTarget: props.monthlyTarget || DEFAULT_THRESHOLDS.monthlyTarget,
+    defectLimit: props.defectLimit || DEFAULT_THRESHOLDS.defectLimit,
+    capMin: props.capMin || DEFAULT_THRESHOLDS.capMin
   };
 
   return ContentService.createTextOutput(JSON.stringify({

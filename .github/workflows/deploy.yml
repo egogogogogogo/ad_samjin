@@ -35,7 +35,22 @@ jobs:
         run: npx clasp push -f
 
       - name: Deploy to Web App
-        run: npx clasp deploy -d "Auto-deployed via GitHub Actions"
+        id: deploy_apps_script
+        run: |
+          DEPLOY_OUTPUT=$(npx clasp deploy -d "Auto-deployed via GitHub Actions")
+          echo "$DEPLOY_OUTPUT"
+          URL=$(echo "$DEPLOY_OUTPUT" | grep -o "https://script.google.com/macros/s/[^ ]*/exec" | head -n 1)
+          if [ -z "$URL" ]; then URL="${{ secrets.API_URL }}"; fi
+          echo "WEB_APP_URL=$URL" >> $GITHUB_ENV
+
+      - name: Generate config.js
+        run: |
+          cat <<EOF > src/frontend/config.js
+          const CONFIG = {
+              apiUrl: '${{ env.WEB_APP_URL }}',
+              thresholds: { ppm: 500, monthlyTarget: 4500000, defectLimit: 80, capMin: 410 }
+          };
+          EOF
 
       - name: Deploy Frontend to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4

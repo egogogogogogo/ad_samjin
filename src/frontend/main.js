@@ -3,20 +3,22 @@
  */
 
 const state = {
-    apiUrl: localStorage.getItem('samjin_qms_api_url') || '',
+    // 1순위: LocalStorage, 2순위: config.js (CONFIG)
+    apiUrl: localStorage.getItem('samjin_qms_api_url') || (typeof CONFIG !== 'undefined' ? CONFIG.apiUrl : ''),
     theme: localStorage.getItem('samjin_theme') || 'dark',
     activeTab: 'dashboard',
     activeDashTab: 'summary',
-    timeframe: 'monthly', // shared with realtime
+    timeframe: 'monthly',
     filterValue: '', 
     customFilter: { start: '', end: '' },
     activeSubTab: 'total',
     data: null,
-    thresholds: { ppm: 500, monthlyTarget: 4500000, defectLimit: 80, capMin: 410 },
+    // 기본 임계치는 CONFIG에서 가져오거나 하드코딩된 기본값 사용
+    thresholds: (typeof CONFIG !== 'undefined' ? { ...CONFIG.thresholds } : { ppm: 500, monthlyTarget: 4500000, defectLimit: 80, capMin: 410 }),
     sort: { key: 'date', order: 'asc' },
     charts: {},
     drillDown: { active: false, process: null },
-    simulators: [] // Line Balancing local state
+    simulators: [] 
 };
 
 document.addEventListener('DOMContentLoaded', initApp);
@@ -246,16 +248,29 @@ function log(msg, color = 'var(--success)') {
 }
 
 async function fetchData() {
-    if (!state.apiUrl) return;
+    if (!state.apiUrl) {
+        log('API URL이 설정되지 않았습니다. 설정을 확인하세요.', 'var(--warning)');
+        return;
+    }
     document.getElementById('update-ts').textContent = '동기화 중...';
     try {
         const res = await fetch(state.apiUrl);
+        if (!res.ok) throw new Error('서버 응답 오류');
         state.data = await res.json();
-        if (state.data.thresholds) state.thresholds = state.data.thresholds;
+        
+        // 서버에서 받은 임계치가 있다면 업데이트 (단, 로컬 저장값이 없을 경우에만 덮어쓰거나 선택적 병합 가능)
+        // 여기서는 서버 데이터를 최신 "기준값"으로 동기화합니다.
+        if (state.data.thresholds) {
+            state.thresholds = { ...state.thresholds, ...state.data.thresholds };
+        }
+        
         log(`데이터 연동 성공!`);
         renderUI();
         document.getElementById('update-ts').textContent = `최종 동기화: ${new Date().toLocaleTimeString()}`;
-    } catch (e) { log(`[통신 에러] ${e.message}`, 'var(--danger)'); }
+    } catch (e) { 
+        log(`[통신 에러] ${e.message}`, 'var(--danger)'); 
+        document.getElementById('update-ts').textContent = '동기화 실패';
+    }
 }
 
 function renderUI() {
