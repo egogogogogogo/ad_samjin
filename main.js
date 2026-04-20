@@ -86,7 +86,11 @@ function initApp() {
     const dz = document.getElementById('drop-zone');
     const fi = document.getElementById('file-input');
     if(dz && fi) {
-        dz.onclick = () => fi.click();
+        console.log('Drop-zone initialized');
+        dz.addEventListener('click', () => {
+            console.log('Drop-zone clicked, triggering file input');
+            fi.click();
+        });
         
         ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
             dz.addEventListener(eventName, (e) => {
@@ -109,15 +113,21 @@ function initApp() {
             dz.style.borderColor = 'var(--border)';
             dz.style.background = 'transparent';
             const files = e.dataTransfer.files;
+            console.log('Files dropped:', files ? files.length : 0);
             if (files && files.length > 0) {
                 handleFileUpload(files[0]);
             }
         });
 
-        fi.onchange = (e) => handleFileUpload(e.target.files[0]);
+        fi.addEventListener('change', (e) => {
+            console.log('File selection changed');
+            if (e.target.files.length > 0) {
+                handleFileUpload(e.target.files[0]);
+            }
+        });
     }
     const btnSaveRaw = document.getElementById('btn-save-raw');
-    if(btnSaveRaw) btnSaveRaw.onclick = saveRawData;
+    if(btnSaveRaw) btnSaveRaw.addEventListener('click', saveRawData);
     const btnDownTmp = document.getElementById('btn-download-template');
     if(btnDownTmp) btnDownTmp.onclick = downloadTemplate;
 
@@ -432,6 +442,12 @@ function downloadTemplate() {
 }
 
 function renderUI() {
+    // 만약 데이터 연동 실패 상태더라도 업로드 탭 등 정적 UI는 동작해야 함
+    if (state.activeTab === 'upload') { 
+        // 엑셀 업로드 탭은 별도 렌더링 로직이 handleFileUpload 이후에 돌아감
+        return; 
+    }
+
     if (!state.data) return;
     if (state.activeTab === 'dashboard') { 
         state.drillDown.active = false; 
