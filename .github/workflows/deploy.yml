@@ -30,10 +30,19 @@ jobs:
           CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
         run: echo "$CLASPRC_JSON" > ~/.clasprc.json
 
-      - name: Create clasp.json
+      - name: Initialize Clasp and Validate ID
         env:
           SCRIPT_ID: ${{ secrets.CLASP_SCRIPT_ID }}
-        run: echo "{\"scriptId\":\"$SCRIPT_ID\",\"rootDir\":\"./src/backend\"}" > .clasp.json
+        run: |
+          if [ -z "$SCRIPT_ID" ]; then
+            echo "::error::CLASP_SCRIPT_ID is missing in GitHub Secrets!"
+            exit 1
+          fi
+          # Masked output for debugging
+          echo "Validating Script ID (Masked): ${SCRIPT_ID:0:5}********************${SCRIPT_ID: -5}"
+          
+          # JSON 생성을 더 안전하게 수행
+          printf '{"scriptId":"%s","rootDir":"./src/backend"}' "$SCRIPT_ID" > .clasp.json
 
       - name: Push to Apps Script
         run: npx clasp push -f
