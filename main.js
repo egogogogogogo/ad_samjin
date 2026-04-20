@@ -94,6 +94,8 @@ function initApp() {
     }
     const btnSaveRaw = document.getElementById('btn-save-raw');
     if(btnSaveRaw) btnSaveRaw.onclick = saveRawData;
+    const btnDownTmp = document.getElementById('btn-download-template');
+    if(btnDownTmp) btnDownTmp.onclick = downloadTemplate;
 
     const today = new Date();
     state.filterValue = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}`;
@@ -387,6 +389,21 @@ async function saveRawData() {
     } finally {
         btn.disabled = false; btn.innerText = '검증 완료 - 클라우드 저장 실행';
     }
+}
+
+function downloadTemplate() {
+    // raw data 탭의 1~2행 레이아웃을 본뜬 템플릿 생성
+    const headers1 = new Array(51).fill('');
+    headers1[3] = '연도/월/일'; headers1[7] = '최종 생산량 합계';
+    
+    const headers2 = ["월", "주차", "공정", "날짜", "성형_총계", "조립_총계", "릴_총계", "최종_총계", "S#5", "S#6", "S#7", "S#8", "S#9", "J#1", "J#2", "J#3", "J#5", "J#6", "J#7", "J#8", "J#9", "J#10", "J#11", "J#12", "R#1", "R#2", "R#3", "R#4", "F#1", "F#2", "F#3", "불량_총계", "찌그러짐", "스크레치", "오염", "스프링", "기울어짐", "기타", "비고", "Cap_Avg", "Cap_Min", "Cap_Max", "C1", "C2", "C3", "C4", "C5", "C6", "C7", "C8", "C9", "C10"];
+    
+    const data = [headers1, headers2];
+    const ws = XLSX.utils.aoa_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "RawData_Upload_Template");
+    XLSX.writeFile(wb, "samjin_qms_upload_template.xlsx");
+    log('업로드 양식 다운로드가 완료되었습니다.');
 }
 
 function renderUI() {
