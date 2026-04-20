@@ -85,6 +85,10 @@ function doPost(e) {
     }
   } else if (params.type === 'SAVE_CONFIG') {
     PropertiesService.getScriptProperties().setProperties(params.payload);
+  } else if (params.type === 'UPDATE_RAW_DATA') {
+    const status = updateRawDataSmartSync(ss, params.payload);
+    return ContentService.createTextOutput(JSON.stringify(status))
+      .setMimeType(ContentService.MimeType.JSON);
   }
 
   return ContentService.createTextOutput(JSON.stringify({status: 'success'}))
@@ -324,4 +328,51 @@ function fetchLineBalance(ss) {
   }
 
   return { targetQty: v[4][2]||0, actualQty: v[5][2]||0, achieveRate: v[6][2]||0, basics, capas };
+}
+
+/**
+ * Smart Sync: 엑셀 데이터를 기존 데이터와 비교하여 중복이 없는 경우에만 추가합니다.
+ * @param {GoogleAppsScript.Spreadsheet.Spreadsheet} ss
+ * @param {Array<Array>} payloadRows - 2차원 배열 형태의 시트 데이터
+ */
+function updateRawDataSmartSync(ss, payloadRows) {
+  const sh = ss.getSheetByName('raw data');
+  if (!sh) return { status: 'error', msg: "'raw data' 시트를 찾을 수 없습니다." };
+  
+  const existingData = sh.getDataRange().getValues();
+  const existingKeys = new Set();
+  
+  // 기존 데이터에서 키 생성 (2행 헤더, 3행부터 데이터)
+  // v7.0~8.0 레이아웃: 날짜=3번 인덱스, 최종_총계=7번 인덱스
+  for (let i = 2; i < existingData.length; i++) {
+    const row = existingData[i];
+    const date = row[3];
+    const final = row[7];
+    if (date) {
+      const dStr = date instanceof Date ? Utilities.formatDate(date, 'Asia/Seoul', 'yyyy-MM-dd') : String(date);
+      existingKeys.add(`${dStr}_${final}`);
+    }
+  }
+
+  const rowsToAppend = payloadRows.filter(row => {
+    let date = row[3];
+    if (!date) return false;
+    let dStr = date instanceof Date ? Utilities.formatDate(date, 'Asia/Seoul', 'yyyy-MM-dd') : String(date);
+    const k = `${dStr}_${row[7]}`;
+    if (existingKeys.has(k)) return false;
+    existingKeys.add(k); // 이번 업로드 묶음 내에서의 중복도 방지
+    return true;
+  });
+
+  if (rowsToAppend.length > 0) {
+    sh.getRange(sh.getLastRow() + 1, 1, rowsToAppend.length, rowsToAppend[0].length).setValues(rowsToAppend);
+    // 데이터가 추가되었으므로 모니터링 로직(V3)을 실행하여 통계 탭들을 갱신합니다.
+    runMonitoringV3();
+  }
+
+  return { 
+    status: 'success', 
+    added: rowsToAppend.length, 
+    skipped: payloadRows.length - rowsToAppend.length 
+  };
 }
