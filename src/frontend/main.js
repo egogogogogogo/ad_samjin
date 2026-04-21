@@ -409,7 +409,7 @@ function renderUploadPreview() {
 }
 
 async function saveRawData() {
-    const APP_VERSION = 'v1.1 (240421-1727)'; // 버전 식별자 추가
+    const APP_VERSION = 'v1.2 (240421-1737)'; // [최종] 패딩 및 서식 고정 버전
     if (!state.apiUrl || !state.uploadedRows.length) return;
     if (!confirm(`[시스템 버전: ${APP_VERSION}]\n기존 데이터를 모두 삭제하고 이 파일의 내용으로 "새로고침" 하시겠습니까?`)) return;
     
@@ -435,8 +435,9 @@ async function saveRawData() {
         const result = await res.json();
         if (result.status === 'success') {
             const addedCount = result.added !== undefined ? result.added : 0;
-            alert(`업로드 성공!\n총 ${addedCount}건의 데이터가 구글 시트에 정상 반영되었습니다.`);
-            log(`클라우드 데이터 새로고침 완료 (총 ${addedCount}건)`);
+            const diag = result.diagnostic || '진단 정보 없음';
+            alert(`업로드 성공!\n총 ${addedCount}건의 데이터가 구글 시트에 정상 반영되었습니다.\n\n[서버 자가검증 결과]:\n${diag}`);
+            log(`클라우드 데이터 새로고침 완료 (총 ${addedCount}건, ${diag})`);
             
             // 초기화
             state.uploadedRows = [];

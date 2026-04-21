@@ -21,9 +21,31 @@ const getSheetId = () => {
 
 // ── 1. Web App API (doGet: 데이터 읽기) ─────────────────────────
 function doGet(e) {
-  const APP_VERSION = 'v1.1 (240421-1727)'; // 관리용 버전
+  const APP_VERSION = 'v1.1 (240421-1731-DIAG)'; // 진단 기능 포함 버전
   try {
     const ss = SpreadsheetApp.openById(getSheetId());
+
+    // [추가] 자가 진단 모드: AI가 직접 데이터 타입과 상태를 점표하기 위함
+    if (e.parameter.type === 'DIAGNOSE') {
+      const sh = ss.getSheetByName('raw data');
+      const lastRow = sh.getLastRow();
+      const lastData = sh.getRange(Math.max(1, lastRow - 9), 1, 10, 8).getValues();
+      const diagnostics = lastData.map((r, i) => ({
+        row: Math.max(1, lastRow - 9) + i,
+        dateValue: r[3],
+        dataType: typeof r[3],
+        isDateObject: r[3] instanceof Date,
+        formatted: (r[3] instanceof Date) ? Utilities.formatDate(r[3], 'Asia/Seoul', 'yyyy-MM-dd') : 'INVALID'
+      }));
+      return ContentService.createTextOutput(JSON.stringify({
+        status: 'success',
+        version: APP_VERSION,
+        sheetId: getSheetId(),
+        lastRow: lastRow,
+        diagnostics: diagnostics
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+
     const fetchData = (name) => {
       const sh = ss.getSheetByName(name);
       if (!sh) return [];
@@ -326,18 +348,28 @@ function updateRawDataRefresh(ss, payloadRows) {
   }
   
   // 가공된 정규 데이터 쓰기
-  sh.getRange(3, 1, processedRows.length, TARGET_COLS).setValues(processedRows);
+  const dataRange = sh.getRange(3, 1, processedRows.length, TARGET_COLS);
+  dataRange.setValues(processedRows);
+  
+  // [추가] 서식 강제 고정: D열(날짜) 서식을 "yyyy-mm-dd"로 강제 지정하여 문자열 변환 방지
+  sh.getRange(3, 4, processedRows.length, 1).setNumberFormat("yyyy-mm-dd");
+  
   SpreadsheetApp.flush();
   
+  // [핵심] 자가 진단: 실제 시트에 어떻게 저장되었는지 첫 번째 행을 다시 읽어 검사
+  const selfCheck = sh.getRange(3, 4).getValue(); // D3 셀
+  const diagInfo = `점검 완료(D3 타입: ${typeof selfCheck}, 값: ${selfCheck instanceof Date ? 'Date객체' : '글자'})`;
+
   // 4. 집계 프로세스 연동
   try {
     runMonitoringV3();
-    return { status: 'success', added: processedRows.length };
+    return { status: 'success', added: processedRows.length, diagnostic: diagInfo };
   } catch(e) {
     console.error("Dashboard aggregation failed: " + e.toString());
     return { 
       status: 'success', 
       added: processedRows.length, 
+      diagnostic: diagInfo,
       warning: '데이터 저장 성공. 단, 대시보드 갱신 중 에러 발생: ' + e.message 
     };
   }
