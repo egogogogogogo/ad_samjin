@@ -409,20 +409,17 @@ function renderUploadPreview() {
 }
 
 async function saveRawData() {
-    const APP_VERSION = 'v1.2 (240421-1737)'; // [최종] 패딩 및 서식 고정 버전
     if (!state.apiUrl || !state.uploadedRows.length) return;
-    if (!confirm(`[시스템 버전: ${APP_VERSION}]\n기존 데이터를 모두 삭제하고 이 파일의 내용으로 "새로고침" 하시겠습니까?`)) return;
+    if (!confirm('기본 데이터를 모두 삭제하고 이 파일의 내용으로 "새로고침" 하시겠습니까?')) return;
     
     const btn = document.getElementById('btn-save-raw');
     btn.disabled = true; btn.innerText = '데이터 교체 중...';
-    log(`업로드 프로세스 시작 (시스템 버전: ${APP_VERSION})`, 'var(--info)');
-
-    // [중요] 날짜 선제 정화: 전송 직전에 날짜를 문자열(YYYY-MM-DD)로 고정
+    
+    // 날짜 컬럼(인덱스 3)이 Date 객체인 경우 전송 가능한 문자열로 변환
     const payload = state.uploadedRows.map(row => {
         const newRow = [...row];
-        const val = newRow[3]; // IDX.date = 3
-        if (val instanceof Date) {
-            newRow[3] = val.toISOString().split('T')[0];
+        if (newRow[3] instanceof Date) {
+            newRow[3] = newRow[3].toISOString();
         }
         return newRow;
     });
@@ -434,25 +431,22 @@ async function saveRawData() {
         });
         const result = await res.json();
         if (result.status === 'success') {
-            const addedCount = result.added !== undefined ? result.added : 0;
-            const diag = result.diagnostic || '진단 정보 없음';
-            alert(`업로드 성공!\n총 ${addedCount}건의 데이터가 구글 시트에 정상 반영되었습니다.\n\n[서버 자가검증 결과]:\n${diag}`);
-            log(`클라우드 데이터 새로고침 완료 (총 ${addedCount}건, ${diag})`);
+            alert(`업로드 성공!\n총 ${result.added || 0}건의 데이터가 구글 시트에 정상 반영되었습니다.`);
             
             // 초기화
             state.uploadedRows = [];
             document.getElementById('preview-card').style.display = 'none';
             document.getElementById('upload-summary').style.display = 'none';
             btn.style.display = 'none';
-            fetchData(); // 최신 데이터로 리로드
+            fetchData(); 
         } else {
             throw new Error(result.msg || '서버 처리 오류');
         }
     } catch (e) {
         alert('저장 실패: ' + e.message);
-        log('업로드 에러: ' + e.message, 'var(--danger)');
     } finally {
-        btn.disabled = false; btn.innerText = '검증 완료 - 클라우드 저장 실행';
+        btn.disabled = false;
+        btn.innerText = '데이터 저장하기';
     }
 }
 

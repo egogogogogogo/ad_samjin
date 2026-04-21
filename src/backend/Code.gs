@@ -21,31 +21,9 @@ const getSheetId = () => {
 
 // ── 1. Web App API (doGet: 데이터 읽기) ─────────────────────────
 function doGet(e) {
-  const APP_VERSION = 'v1.1 (240421-1731-DIAG)'; // 진단 기능 포함 버전
   try {
     const ss = SpreadsheetApp.openById(getSheetId());
-
-    // [추가] 자가 진단 모드: AI가 직접 데이터 타입과 상태를 점표하기 위함
-    if (e.parameter.type === 'DIAGNOSE') {
-      const sh = ss.getSheetByName('raw data');
-      const lastRow = sh.getLastRow();
-      const lastData = sh.getRange(Math.max(1, lastRow - 9), 1, 10, 8).getValues();
-      const diagnostics = lastData.map((r, i) => ({
-        row: Math.max(1, lastRow - 9) + i,
-        dateValue: r[3],
-        dataType: typeof r[3],
-        isDateObject: r[3] instanceof Date,
-        formatted: (r[3] instanceof Date) ? Utilities.formatDate(r[3], 'Asia/Seoul', 'yyyy-MM-dd') : 'INVALID'
-      }));
-      return ContentService.createTextOutput(JSON.stringify({
-        status: 'success',
-        version: APP_VERSION,
-        sheetId: getSheetId(),
-        lastRow: lastRow,
-        diagnostics: diagnostics
-      })).setMimeType(ContentService.MimeType.JSON);
-    }
-
+    
     const fetchData = (name) => {
       const sh = ss.getSheetByName(name);
       if (!sh) return [];
@@ -311,66 +289,47 @@ function updateRawDataRefresh(ss, payloadRows) {
   const sh = ss.getSheetByName('raw data');
   if (!sh) return { status: 'error', msg: "'raw data' 시트 누락" };
   
-  // 1. 유효 데이터 필터링 (날짜 컬럼 기준)
-  const validRows = payloadRows.filter(row => {
-    const d = row[IDX.date];
-    return d && String(d).trim() !== '' && !String(d).includes('날짜');
-  });
+  // 1. 유효 데이터 필터링
+  const validRows = payloadRows.filter(row => row[3] && String(row[3]).trim() !== '' && !String(row[3]).includes('날짜'));
+  if (validRows.length === 0) return { status: 'error', msg: "업로드할 데이터가 없습니다." };
 
-  if (validRows.length === 0) return { status: 'error', msg: "업로드할 유효한 생산 데이터가 없습니다." };
-
-  // 2. 데이터 가공 및 규격화 (가독성 복구 + 구조 보존)
-  // [중요] 시트의 전체 너비(AF=31 ~ C10=51까지)를 보존하기 위해 최소 52개 컬럼을 확보합니다.
+  // 2. 데이터 가공 및 날짜 강제 정규화
   const TARGET_COLS = 52; 
   const processedRows = validRows.map(row => {
-    // 2-1. Padding: 시트 구조 보존을 위해 부족한 컬럼을 빈 값으로 채움
     let newRow = Array(TARGET_COLS).fill('');
     row.forEach((val, i) => { if (i < TARGET_COLS) newRow[i] = val; });
 
-    // 2-2. Date Recovery: ISO 문자열을 구글 시트 전용 날짜 객체로 변환
-    const d = newRow[IDX.date];
-    if (typeof d === 'string' && (d.includes('T') || d.includes('Z'))) {
-      const dateObj = new Date(d);
-      if (!isNaN(dateObj.getTime())) {
-        // 시간 오차를 방지하고 가독성을 위해 정시(00:00)로 초기화합니다.
-        dateObj.setHours(0, 0, 0, 0); 
-        newRow[IDX.date] = dateObj;
+    // D열(날짜) 강제 타입 변환 (글자 -> Date 객체)
+    let d = newRow[3];
+    if (d) {
+      let dt = new Date(d);
+      if (!isNaN(dt.getTime())) {
+        dt.setHours(0, 0, 0, 0);
+        newRow[3] = dt;
       }
     }
     return newRow;
   });
 
-  // 3. 일괄 쓰기 (구조 파괴 없이 데이터만 교체)
-  const currentMaxRow = sh.getLastRow();
-  if (currentMaxRow >= 3) {
-    // 데이터 영역만 정밀하게 초기화
-    sh.getRange(3, 1, Math.max(currentMaxRow - 2, processedRows.length), TARGET_COLS).clearContent();
+  // 3. 일괄 쓰기 및 서식 고정
+  const lastRow = sh.getLastRow();
+  if (lastRow >= 3) {
+    sh.getRange(3, 1, Math.max(lastRow - 2, processedRows.length), TARGET_COLS).clearContent();
   }
   
-  // 가공된 정규 데이터 쓰기
-  const dataRange = sh.getRange(3, 1, processedRows.length, TARGET_COLS);
-  dataRange.setValues(processedRows);
+  const writeRange = sh.getRange(3, 1, processedRows.length, TARGET_COLS);
+  writeRange.setValues(processedRows);
   
-  // [추가] 서식 강제 고정: D열(날짜) 서식을 "yyyy-mm-dd"로 강제 지정하여 문자열 변환 방지
+  // D열 서식 강제 고정 (yyyy-mm-dd)
   sh.getRange(3, 4, processedRows.length, 1).setNumberFormat("yyyy-mm-dd");
-  
   SpreadsheetApp.flush();
   
-  // [핵심] 자가 진단: 실제 시트에 어떻게 저장되었는지 첫 번째 행을 다시 읽어 검사
-  const selfCheck = sh.getRange(3, 4).getValue(); // D3 셀
-  const diagInfo = `점검 완료(D3 타입: ${typeof selfCheck}, 값: ${selfCheck instanceof Date ? 'Date객체' : '글자'})`;
-
-  // 4. 집계 프로세스 연동
+  // 4. 집계 엔진 실행
   try {
     runMonitoringV3();
-    return { status: 'success', added: processedRows.length, diagnostic: diagInfo };
+    return { status: 'success', added: processedRows.length };
   } catch(e) {
-    console.error("Dashboard aggregation failed: " + e.toString());
-    return { 
-      status: 'success', 
-      added: processedRows.length, 
-      diagnostic: diagInfo,
-      warning: '데이터 저장 성공. 단, 대시보드 갱신 중 에러 발생: ' + e.message 
-    };
+    console.error("Dashboard sync error: " + e.toString());
+    return { status: 'success', added: processedRows.length, warning: '집계 오류' };
   }
 }
