@@ -409,21 +409,33 @@ function renderUploadPreview() {
 }
 
 async function saveRawData() {
+    const APP_VERSION = 'v1.1 (240421-1727)'; // 버전 식별자 추가
     if (!state.apiUrl || !state.uploadedRows.length) return;
-    if (!confirm('기존 데이터를 모두 삭제하고 이 파일의 내용으로 "새로고침" 하시겠습니까?')) return;
+    if (!confirm(`[시스템 버전: ${APP_VERSION}]\n기존 데이터를 모두 삭제하고 이 파일의 내용으로 "새로고침" 하시겠습니까?`)) return;
     
     const btn = document.getElementById('btn-save-raw');
     btn.disabled = true; btn.innerText = '데이터 교체 중...';
+    log(`업로드 프로세스 시작 (시스템 버전: ${APP_VERSION})`, 'var(--info)');
+
+    // [중요] 날짜 선제 정화: 전송 직전에 날짜를 문자열(YYYY-MM-DD)로 고정
+    const payload = state.uploadedRows.map(row => {
+        const newRow = [...row];
+        const val = newRow[3]; // IDX.date = 3
+        if (val instanceof Date) {
+            newRow[3] = val.toISOString().split('T')[0];
+        }
+        return newRow;
+    });
     
     try {
         const res = await fetch(state.apiUrl, {
             method: 'POST',
-            body: JSON.stringify({ type: 'UPDATE_RAW_DATA', payload: state.uploadedRows })
+            body: JSON.stringify({ type: 'UPDATE_RAW_DATA', payload: payload })
         });
         const result = await res.json();
         if (result.status === 'success') {
             const addedCount = result.added !== undefined ? result.added : 0;
-            alert(`업로드 성공!\n총 ${addedCount}건의 데이터로 새로고침되었습니다.`);
+            alert(`업로드 성공!\n총 ${addedCount}건의 데이터가 구글 시트에 정상 반영되었습니다.`);
             log(`클라우드 데이터 새로고침 완료 (총 ${addedCount}건)`);
             
             // 초기화

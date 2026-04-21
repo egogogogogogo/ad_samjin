@@ -21,6 +21,7 @@ const getSheetId = () => {
 
 // ── 1. Web App API (doGet: 데이터 읽기) ─────────────────────────
 function doGet(e) {
+  const APP_VERSION = 'v1.1 (240421-1727)'; // 관리용 버전
   try {
     const ss = SpreadsheetApp.openById(getSheetId());
     const fetchData = (name) => {
@@ -53,6 +54,7 @@ function doGet(e) {
 
     return ContentService.createTextOutput(JSON.stringify({
       status: 'success',
+      version: APP_VERSION,
       daily: fetchData('일별 생산현황'),
       weekly: fetchData('주별 생산현황'),
       monthly: fetchData('월별 생산현황'),
