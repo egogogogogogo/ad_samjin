@@ -415,11 +415,15 @@ async function saveRawData() {
     const btn = document.getElementById('btn-save-raw');
     btn.disabled = true; btn.innerText = '데이터 교체 중...';
     
-    // 날짜 컬럼(인덱스 3)이 Date 객체인 경우 전송 가능한 문자열로 변환
+    // 날짜 컬럼(인덱스 3)이 Date 객체인 경우 'YYYY-MM-DD' 단순 문자열로 변환하여 전송 (자연스러운 인식 유도)
     const payload = state.uploadedRows.map(row => {
         const newRow = [...row];
-        if (newRow[3] instanceof Date) {
-            newRow[3] = newRow[3].toISOString();
+        const val = newRow[3];
+        if (val instanceof Date) {
+            const y = val.getFullYear();
+            const m = String(val.getMonth() + 1).padStart(2, '0');
+            const d = String(val.getDate()).padStart(2, '0');
+            newRow[3] = `${y}-${m}-${d}`;
         }
         return newRow;
     });

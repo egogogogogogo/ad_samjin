@@ -293,35 +293,21 @@ function updateRawDataRefresh(ss, payloadRows) {
   const validRows = payloadRows.filter(row => row[3] && String(row[3]).trim() !== '' && !String(row[3]).includes('날짜'));
   if (validRows.length === 0) return { status: 'error', msg: "업로드할 데이터가 없습니다." };
 
-  // 2. 데이터 가공 및 날짜 강제 정규화
+  // 2. 데이터 가공 (구조 보존을 위한 패딩만 처리)
   const TARGET_COLS = 52; 
   const processedRows = validRows.map(row => {
     let newRow = Array(TARGET_COLS).fill('');
     row.forEach((val, i) => { if (i < TARGET_COLS) newRow[i] = val; });
-
-    // D열(날짜) 강제 타입 변환 (글자 -> Date 객체)
-    let d = newRow[3];
-    if (d) {
-      let dt = new Date(d);
-      if (!isNaN(dt.getTime())) {
-        dt.setHours(0, 0, 0, 0);
-        newRow[3] = dt;
-      }
-    }
     return newRow;
   });
 
-  // 3. 일괄 쓰기 및 서식 고정
+  // 3. 일괄 쓰기 (추가 서식 지정 없이 데이터 그대로 입력)
   const lastRow = sh.getLastRow();
   if (lastRow >= 3) {
     sh.getRange(3, 1, Math.max(lastRow - 2, processedRows.length), TARGET_COLS).clearContent();
   }
   
-  const writeRange = sh.getRange(3, 1, processedRows.length, TARGET_COLS);
-  writeRange.setValues(processedRows);
-  
-  // D열 서식 강제 고정 (yyyy-mm-dd)
-  sh.getRange(3, 4, processedRows.length, 1).setNumberFormat("yyyy-mm-dd");
+  sh.getRange(3, 1, processedRows.length, TARGET_COLS).setValues(processedRows);
   SpreadsheetApp.flush();
   
   // 4. 집계 엔진 실행
