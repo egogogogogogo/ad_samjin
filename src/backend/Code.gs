@@ -298,7 +298,7 @@ function updateRawDataRefresh(ss, payloadRows) {
     return d && String(d).trim() !== '' && !String(d).includes('날짜');
   });
 
-  // 3. 일괄 쓰기
+  // 3. 데이터 정규화 및 일괄 쓰기
   if (validRows.length > 0) {
     const rowsCount = validRows.length;
     const colsCount = validRows[0].length;
@@ -308,7 +308,20 @@ function updateRawDataRefresh(ss, payloadRows) {
       sh.insertColumnsAfter(sh.getMaxColumns(), colsCount - sh.getMaxColumns());
     }
     
-    sh.getRange(3, 1, rowsCount, colsCount).setValues(validRows);
+    // [중요] 가독성 복구: ISO 문자열로 넘어온 날짜를 실제 구글 시트 날짜 객체로 변환
+    const processedRows = validRows.map(row => {
+      const newRow = [...row];
+      const d = newRow[IDX.date];
+      if (typeof d === 'string' && d.includes('T')) {
+        const dateObj = new Date(d);
+        if (!isNaN(dateObj.getTime())) {
+          newRow[IDX.date] = dateObj;
+        }
+      }
+      return newRow;
+    });
+    
+    sh.getRange(3, 1, rowsCount, colsCount).setValues(processedRows);
     SpreadsheetApp.flush();
     
     // 집계 프로세스 실행 (에러 시에도 저장은 성공으로 반환하기 위해 try-catch 후 로그만 남김)
