@@ -410,36 +410,43 @@ function renderUploadPreview() {
 
 async function saveRawData() {
     if (!state.apiUrl || !state.uploadedRows.length) return;
-    if (!confirm('기존 데이터를 모두 삭제하고 이 파일의 내용으로 "새로고침" 하시겠습니까?')) return;
+    if (!confirm('기본 데이터를 모두 삭제하고 이 파일의 내용으로 "새로고침" 하시겠습니까?')) return;
     
     const btn = document.getElementById('btn-save-raw');
     btn.disabled = true; btn.innerText = '데이터 교체 중...';
     
+    // 날짜 컬럼(인덱스 3)이 Date 객체인 경우 전송 가능한 문자열로 변환
+    const payload = state.uploadedRows.map(row => {
+        const newRow = [...row];
+        if (newRow[3] instanceof Date) {
+            newRow[3] = newRow[3].toISOString();
+        }
+        return newRow;
+    });
+    
     try {
         const res = await fetch(state.apiUrl, {
             method: 'POST',
-            body: JSON.stringify({ type: 'UPDATE_RAW_DATA', payload: state.uploadedRows })
+            body: JSON.stringify({ type: 'UPDATE_RAW_DATA', payload: payload })
         });
         const result = await res.json();
         if (result.status === 'success') {
-            const addedCount = result.added !== undefined ? result.added : 0;
-            alert(`업로드 성공!\n총 ${addedCount}건의 데이터로 새로고침되었습니다.`);
-            log(`클라우드 데이터 새로고침 완료 (총 ${addedCount}건)`);
+            alert(`업로드 성공!\n총 ${result.added || 0}건의 데이터가 구글 시트에 정상 반영되었습니다.`);
             
             // 초기화
             state.uploadedRows = [];
             document.getElementById('preview-card').style.display = 'none';
             document.getElementById('upload-summary').style.display = 'none';
             btn.style.display = 'none';
-            fetchData(); // 최신 데이터로 리로드
+            fetchData(); 
         } else {
             throw new Error(result.msg || '서버 처리 오류');
         }
     } catch (e) {
         alert('저장 실패: ' + e.message);
-        log('업로드 에러: ' + e.message, 'var(--danger)');
     } finally {
-        btn.disabled = false; btn.innerText = '검증 완료 - 클라우드 저장 실행';
+        btn.disabled = false;
+        btn.innerText = '데이터 저장하기';
     }
 }
 
