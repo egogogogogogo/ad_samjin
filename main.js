@@ -363,9 +363,18 @@ function handleFileUpload(file) {
         
         // 빈 행 및 데이터가 없는 행 필터링 (최적화)
         const cleanedRows = rows.filter(row => row && row.length > 0 && row.some(cell => cell !== null && cell !== undefined && cell !== ''));
-        console.log(`최적화 결과: ${rows.length}행 -> ${cleanedRows.length}행`);
         
-        state.uploadedRows = cleanedRows;
+        // [추가] 데이터 규격 안정화: 모든 행의 길이를 최대 길이에 맞춰 패딩 (Google Sheets setValues 에러 방지)
+        const maxCols = Math.max(...cleanedRows.map(r => r.length));
+        const normalizedRows = cleanedRows.map(row => {
+            const newRow = Array.from(row);
+            while (newRow.length < maxCols) newRow.push('');
+            return newRow;
+        });
+
+        console.log(`최적화 결과: ${rows.length}행 -> ${normalizedRows.length}행 (행당 컬럼 수: ${maxCols})`);
+        
+        state.uploadedRows = normalizedRows;
         renderUploadPreview();
     };
     reader.readAsArrayBuffer(file);
@@ -390,7 +399,11 @@ function renderUploadPreview() {
     // 미리보기 (최대 20행)
     const previewRows = rows.slice(0, 22); // 헤더 2행 + 데이터 20행
     head.innerHTML = `<tr>${previewRows[1].map(h => `<th>${h || ''}</th>`).join('')}</tr>`;
-    body.innerHTML = previewRows.slice(2).map(r => `<tr>${r.map(v => `<td>${v || ''}</td>`).join('')}</tr>`).join('');
+    body.innerHTML = previewRows.slice(2).map(r => `<tr>${r.map(v => {
+        let display = v || '';
+        if (v instanceof Date) display = v.toISOString().split('T')[0];
+        return `<td>${display}</td>`;
+    }).join('')}</tr>`).join('');
     
     log('파일 분석이 완료되었습니다. 미리보기를 확인하고 저장 버튼을 누르세요.');
 }
