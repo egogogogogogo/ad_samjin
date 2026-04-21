@@ -134,11 +134,20 @@ function parseIntegratedRawData(ss) {
     if (rawDate instanceof Date) {
       dateObj = rawDate;
     } else if (typeof rawDate === 'string' && rawDate.trim() !== '') {
-      dateObj = new Date(rawDate.replace(/\./g, '-'));
+      // 1. 점(.) 형식 처리 (2024.01.01)
+      let dStr = rawDate.replace(/\./g, '-');
+      dateObj = new Date(dStr);
+      // 2. 파싱 실패 시 원본 문자열로 재시도 (KST/UTC 문자열 대응)
+      if (isNaN(dateObj.getTime())) dateObj = new Date(rawDate);
     } else if (typeof rawDate === 'number') {
+      // 엑셀 시리얼 넘버 처리
       dateObj = new Date((rawDate - 25569) * 86400 * 1000);
     }
-    if (!dateObj || isNaN(dateObj.getTime())) continue;
+
+    if (!dateObj || isNaN(dateObj.getTime())) {
+      // 날짜가 없거나 형식이 잘못된 행은 스킵
+      continue;
+    }
 
     const final = n(row[IDX.final]);
     const defect = n(row[IDX.defect]);
@@ -291,9 +300,24 @@ function updateRawDataRefresh(ss, payloadRows) {
 
   // 3. 일괄 쓰기
   if (validRows.length > 0) {
-    sh.getRange(3, 1, validRows.length, validRows[0].length).setValues(validRows);
+    const rowsCount = validRows.length;
+    const colsCount = validRows[0].length;
+    
+    // 시트 크기가 부족할 경우 확장 (Range 에러 방지)
+    if (sh.getMaxColumns() < colsCount) {
+      sh.insertColumnsAfter(sh.getMaxColumns(), colsCount - sh.getMaxColumns());
+    }
+    
+    sh.getRange(3, 1, rowsCount, colsCount).setValues(validRows);
     SpreadsheetApp.flush();
-    runMonitoringV3();
+    
+    // 집계 프로세스 실행 (에러 시에도 저장은 성공으로 반환하기 위해 try-catch 후 로그만 남김)
+    try {
+      runMonitoringV3();
+    } catch(e) {
+      console.error("Dashboard aggregation failed: " + e.toString());
+      return { status: 'success', added: validRows.length, warning: 'Data saved but dashboard update failed.' };
+    }
   }
 
   return { status: 'success', added: validRows.length };
