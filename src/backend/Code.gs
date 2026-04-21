@@ -1,4 +1,4 @@
-// ── 0. 시스템 정보 및 표준 컬럼 인덱스 (R07 고정 구조) ──────────────
+const APP_VERSION = 'v8.0 (240421-Stable)'; // [최종] 초기 구조 안정화 버전
 const RAW_HEADERS_ROW = 2; // 2행이 헤더 (Data는 3행부터)
 const IDX = {
   month: 0, date: 3, seong: 4, jorip: 5, reel: 6, final: 7, 
@@ -130,26 +130,20 @@ function parseIntegratedRawData(ss) {
   for (let i = 2; i < data.length; i++) {
     const row = data[i];
     
-    // 날짜 파싱 (숫자/문자열/객체 대응)
+    // 날짜 파싱: 구글 시트 Date 객체 최우선 처리
     let rawDate = row[IDX.date];
     let dateObj = null;
+    
     if (rawDate instanceof Date) {
       dateObj = rawDate;
-    } else if (typeof rawDate === 'string' && rawDate.trim() !== '') {
-      // 1. 점(.) 형식 처리 (2024.01.01)
-      let dStr = rawDate.replace(/\./g, '-');
+    } else if (rawDate) {
+      // 텍스트(예: 2024.01.01) 대응
+      const dStr = String(rawDate).replace(/\./g, '-');
       dateObj = new Date(dStr);
-      // 2. 파싱 실패 시 원본 문자열로 재시도 (KST/UTC 문자열 대응)
       if (isNaN(dateObj.getTime())) dateObj = new Date(rawDate);
-    } else if (typeof rawDate === 'number') {
-      // 엑셀 시리얼 넘버 처리
-      dateObj = new Date((rawDate - 25569) * 86400 * 1000);
     }
 
-    if (!dateObj || isNaN(dateObj.getTime())) {
-      // 날짜가 없거나 형식이 잘못된 행은 스킵
-      continue;
-    }
+    if (!dateObj || isNaN(dateObj.getTime())) continue;
 
     const final = n(row[IDX.final]);
     const defect = n(row[IDX.defect]);
