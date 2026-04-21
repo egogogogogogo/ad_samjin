@@ -4,7 +4,7 @@
  */
 const CONFIG = {
     // 앱 시작 시 사용할 기본 API URL (GitHub Actions에서 자동 주입 가능)
-    apiUrl: 'https://script.google.com/macros/s/AKfycbysnjk1u6s09KaJiTuomgTbCoKnr12W-9yjg0rtlS6RzwsLFHnJ5q5HFGMpQorIoPBD/exec', 
+    apiUrl: 'https://script.google.com/macros/s/AKfycbzi27OOImomSZr0aqc6_006IJ0RSa9aakWIXicDfdp-_KRviHp-_M11pjeAksLfSgv3/exec', 
 
     // 기본 임계치 설정 (서버 데이터가 없을 경우 사용)
     thresholds: {

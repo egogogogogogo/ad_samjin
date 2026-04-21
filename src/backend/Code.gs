@@ -281,57 +281,62 @@ function fetchLineBalance(ss) {
 }
 
 /**
- * [개선] Refresh Sync: 기존 데이터를 비우고 새로운 데이터를 그대로 부어넣습니다.
+ * [개선] Refresh Sync: 기존 데이터를 비우고 새로운 데이터를 규격에 맞춰 재구성하여 저장합니다.
  */
 function updateRawDataRefresh(ss, payloadRows) {
   const sh = ss.getSheetByName('raw data');
   if (!sh) return { status: 'error', msg: "'raw data' 시트 누락" };
   
-  // 1. 초기화 (헤더 제외한 데이터 영역 삭제)
-  if (sh.getLastRow() >= 3) {
-    sh.getRange(3, 1, sh.getLastRow() - 2, sh.getLastColumn()).clearContent();
-  }
-
-  // 2. 유효 데이터 필터링 (날짜 컬럼 기준)
+  // 1. 유효 데이터 필터링 (날짜 컬럼 기준)
   const validRows = payloadRows.filter(row => {
     const d = row[IDX.date];
     return d && String(d).trim() !== '' && !String(d).includes('날짜');
   });
 
-  // 3. 데이터 정규화 및 일괄 쓰기
-  if (validRows.length > 0) {
-    const rowsCount = validRows.length;
-    const colsCount = validRows[0].length;
-    
-    // 시트 크기가 부족할 경우 확장 (Range 에러 방지)
-    if (sh.getMaxColumns() < colsCount) {
-      sh.insertColumnsAfter(sh.getMaxColumns(), colsCount - sh.getMaxColumns());
-    }
-    
-    // [중요] 가독성 복구: ISO 문자열로 넘어온 날짜를 실제 구글 시트 날짜 객체로 변환
-    const processedRows = validRows.map(row => {
-      const newRow = [...row];
-      const d = newRow[IDX.date];
-      if (typeof d === 'string' && d.includes('T')) {
-        const dateObj = new Date(d);
-        if (!isNaN(dateObj.getTime())) {
-          newRow[IDX.date] = dateObj;
-        }
-      }
-      return newRow;
-    });
-    
-    sh.getRange(3, 1, rowsCount, colsCount).setValues(processedRows);
-    SpreadsheetApp.flush();
-    
-    // 집계 프로세스 실행 (에러 시에도 저장은 성공으로 반환하기 위해 try-catch 후 로그만 남김)
-    try {
-      runMonitoringV3();
-    } catch(e) {
-      console.error("Dashboard aggregation failed: " + e.toString());
-      return { status: 'success', added: validRows.length, warning: 'Data saved but dashboard update failed.' };
-    }
-  }
+  if (validRows.length === 0) return { status: 'error', msg: "업로드할 유효한 생산 데이터가 없습니다." };
 
-  return { status: 'success', added: validRows.length };
+  // 2. 데이터 가공 및 규격화 (가독성 복구 + 구조 보존)
+  // [중요] 시트의 전체 너비(AF=31 ~ C10=51까지)를 보존하기 위해 최소 52개 컬럼을 확보합니다.
+  const TARGET_COLS = 52; 
+  const processedRows = validRows.map(row => {
+    // 2-1. Padding: 시트 구조 보존을 위해 부족한 컬럼을 빈 값으로 채움
+    let newRow = Array(TARGET_COLS).fill('');
+    row.forEach((val, i) => { if (i < TARGET_COLS) newRow[i] = val; });
+
+    // 2-2. Date Recovery: ISO 문자열을 구글 시트 전용 날짜 객체로 변환
+    const d = newRow[IDX.date];
+    if (typeof d === 'string' && (d.includes('T') || d.includes('Z'))) {
+      const dateObj = new Date(d);
+      if (!isNaN(dateObj.getTime())) {
+        // 시간 오차를 방지하고 가독성을 위해 정시(00:00)로 초기화합니다.
+        dateObj.setHours(0, 0, 0, 0); 
+        newRow[IDX.date] = dateObj;
+      }
+    }
+    return newRow;
+  });
+
+  // 3. 일괄 쓰기 (구조 파괴 없이 데이터만 교체)
+  const currentMaxRow = sh.getLastRow();
+  if (currentMaxRow >= 3) {
+    // 데이터 영역만 정밀하게 초기화
+    sh.getRange(3, 1, Math.max(currentMaxRow - 2, processedRows.length), TARGET_COLS).clearContent();
+  }
+  
+  // 가공된 정규 데이터 쓰기
+  sh.getRange(3, 1, processedRows.length, TARGET_COLS).setValues(processedRows);
+  SpreadsheetApp.flush();
+  
+  // 4. 집계 프로세스 연동
+  try {
+    runMonitoringV3();
+    return { status: 'success', added: processedRows.length };
+  } catch(e) {
+    console.error("Dashboard aggregation failed: " + e.toString());
+    return { 
+      status: 'success', 
+      added: processedRows.length, 
+      warning: '데이터 저장 성공. 단, 대시보드 갱신 중 에러 발생: ' + e.message 
+    };
+  }
 }
