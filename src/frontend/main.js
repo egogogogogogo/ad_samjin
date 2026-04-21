@@ -355,9 +355,9 @@ function handleFileUpload(file) {
     const reader = new FileReader();
     reader.onload = (e) => {
         const data = new Uint8Array(e.target.result);
-        const workbook = XLSX.read(data, { type: 'array', cellDates: true });
+        const workbook = XLSX.read(data, { type: 'array', cellDates: false });
         const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-        const rows = XLSX.utils.sheet_to_json(firstSheet, { header: 1 });
+        const rows = XLSX.utils.sheet_to_json(firstSheet, { header: 1, raw: false });
         
         log(`파일 로드 완료: 총 ${rows.length - 2}행의 데이터를 발견했습니다. (전송 최적화 중...)`, 'var(--success)');
         
@@ -415,23 +415,10 @@ async function saveRawData() {
     const btn = document.getElementById('btn-save-raw');
     btn.disabled = true; btn.innerText = '데이터 교체 중...';
     
-    // 날짜 컬럼(인덱스 3)이 Date 객체인 경우 'YYYY-MM-DD' 단순 문자열로 변환하여 전송 (자연스러운 인식 유도)
-    const payload = state.uploadedRows.map(row => {
-        const newRow = [...row];
-        const val = newRow[3];
-        if (val instanceof Date) {
-            const y = val.getFullYear();
-            const m = String(val.getMonth() + 1).padStart(2, '0');
-            const d = String(val.getDate()).padStart(2, '0');
-            newRow[3] = `${y}-${m}-${d}`;
-        }
-        return newRow;
-    });
-    
     try {
         const res = await fetch(state.apiUrl, {
             method: 'POST',
-            body: JSON.stringify({ type: 'UPDATE_RAW_DATA', payload: payload })
+            body: JSON.stringify({ type: 'UPDATE_RAW_DATA', payload: state.uploadedRows })
         });
         const result = await res.json();
         if (result.status === 'success') {
