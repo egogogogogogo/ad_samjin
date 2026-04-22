@@ -19,9 +19,41 @@ const getSheetId = () => {
   return id;
 };
 
+// ── 보안 설정 ──────────────────────────
+const SESSION_TIMEOUT_MS = 8 * 60 * 60 * 1000; // 8시간
+
+function verifySession(token) {
+  if (!token) return false;
+  const props = PropertiesService.getScriptProperties();
+  const sessionData = props.getProperty('SESSION_' + token);
+  if (!sessionData) return false;
+  
+  const { expiry } = JSON.parse(sessionData);
+  if (new Date().getTime() > expiry) {
+    props.deleteProperty('SESSION_' + token);
+    return false;
+  }
+  return true;
+}
+
+function createSession() {
+  const token = Utilities.getUuid();
+  const expiry = new Date().getTime() + SESSION_TIMEOUT_MS;
+  PropertiesService.getScriptProperties().setProperty('SESSION_' + token, JSON.stringify({ expiry }));
+  return token;
+}
+
 // ── 1. Web App API (doGet: 데이터 읽기) ─────────────────────────
 function doGet(e) {
   try {
+    const token = e.parameter.token;
+    if (!verifySession(token)) {
+      return ContentService.createTextOutput(JSON.stringify({
+        status: 'error',
+        msg: '인증이 필요합니다. (Invalid or expired token)'
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+
     const ss = SpreadsheetApp.openById(getSheetId());
     
     const fetchData = (name) => {
@@ -75,8 +107,46 @@ function doGet(e) {
 // ── 2. Web App API (doPost: 데이터 저장/동기화) ────────────────────────
 function doPost(e) {
   try {
-    const ss = SpreadsheetApp.openById(getSheetId());
     const params = JSON.parse(e.postData.contents);
+    
+    // [보안] 로그인 요청은 토큰 체크 제외
+    if (params.type === 'LOGIN') {
+      const props = PropertiesService.getScriptProperties();
+      const adminId = props.getProperty('ADMIN_ID') || 'admin';
+      const adminPw = props.getProperty('ADMIN_PW') || '1234'; // 초기값
+      
+      if (params.payload.id === adminId && params.payload.pw === adminPw) {
+        return ContentService.createTextOutput(JSON.stringify({
+          status: 'success',
+          token: createSession()
+        })).setMimeType(ContentService.MimeType.JSON);
+      } else {
+        return ContentService.createTextOutput(JSON.stringify({
+          status: 'error',
+          msg: '아이디 또는 비밀번호가 일치하지 않습니다.'
+        })).setMimeType(ContentService.MimeType.JSON);
+      }
+    }
+
+    // [보안] 초기 설정 (한번 실행 후 제거 권장)
+    if (params.type === 'SETUP_ADMIN') {
+      PropertiesService.getScriptProperties().setProperties({
+        'ADMIN_ID': params.payload.id,
+        'ADMIN_PW': params.payload.pw
+      });
+      return ContentService.createTextOutput(JSON.stringify({status: 'success', msg: 'Admin 설정 완료'}))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // [보안] 일반 요청 토큰 체크
+    if (!verifySession(params.token)) {
+      return ContentService.createTextOutput(JSON.stringify({
+        status: 'error',
+        msg: '세션이 만료되었습니다. 다시 로그인해주세요.'
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    const ss = SpreadsheetApp.openById(getSheetId());
     
     if (params.type === 'SAVE_PLAN') {
       const sh = ss.getSheetByName('plan');
@@ -94,7 +164,9 @@ function doPost(e) {
         SpreadsheetApp.flush();
       }
     } else if (params.type === 'SAVE_CONFIG') {
-      PropertiesService.getScriptProperties().setProperties(params.payload);
+      const config = {...params.payload};
+      delete config.token; // 토큰은 프로퍼티에 저장하지 않음
+      PropertiesService.getScriptProperties().setProperties(config);
     } else if (params.type === 'UPDATE_RAW_DATA') {
       const status = updateRawDataRefresh(ss, params.payload);
       return ContentService.createTextOutput(JSON.stringify(status))
@@ -110,6 +182,7 @@ function doPost(e) {
     })).setMimeType(ContentService.MimeType.JSON);
   }
 }
+
 
 // ── 3. 상세 파싱 (표준 고정 인덱스 기반 단순화) ───────────────────────────
 function parseIntegratedRawData(ss) {

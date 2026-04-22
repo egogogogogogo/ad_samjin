@@ -13,6 +13,9 @@ const state = {
     customFilter: { start: '', end: '' },
     activeSubTab: 'total',
     data: null,
+    // [보안] 세션 토큰 및 Supabase 설정
+    sessionToken: sessionStorage.getItem('samjin_session_token'),
+    supabase: null,
     // 기본 임계치는 CONFIG에서 가져오되, 없을 경우 절대 누락되지 않도록 하드코딩된 기본값과 병합
     thresholds: {
         ppm: 500,
@@ -137,6 +140,12 @@ function initApp() {
     const btnDownTmp = document.getElementById('btn-download-template');
     if(btnDownTmp) btnDownTmp.onclick = downloadTemplate;
 
+    // [보안] 로그인 이벤트 바인딩
+    document.getElementById('btn-login').addEventListener('click', handleLogin);
+    document.getElementById('login-pw').addEventListener('keypress', (e) => {
+        if(e.key === 'Enter') handleLogin();
+    });
+
     const today = new Date();
     state.filterValue = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}`;
     state.customFilter.end = today.toISOString().split('T')[0];
@@ -144,8 +153,77 @@ function initApp() {
     state.customFilter.start = prior.toISOString().split('T')[0];
 
     buildDynamicFilterUI();
-    if (state.apiUrl) fetchData();
-    else switchTab('settings');
+
+    // [보안] 세션 확인 후 초기화
+    initSecurity();
+}
+
+/**
+ * [보안] 보안 매니저 및 Supabase 초기화
+ */
+function initSecurity() {
+    // Supabase 초기화 (Placeholder - 추후 사용자 정보 반영 필요)
+    const SUPABASE_URL = (typeof CONFIG !== 'undefined' && CONFIG.supabaseUrl) ? CONFIG.supabaseUrl : '';
+    const SUPABASE_KEY = (typeof CONFIG !== 'undefined' && CONFIG.supabaseKey) ? CONFIG.supabaseKey : '';
+    
+    if (SUPABASE_URL && SUPABASE_KEY) {
+        state.supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        console.log('Supabase client initialized');
+    }
+
+    if (!state.sessionToken) {
+        showLogin();
+    } else {
+        if (state.apiUrl) fetchData();
+        else switchTab('settings');
+    }
+}
+
+function showLogin() {
+    document.getElementById('login-overlay').style.display = 'flex';
+}
+
+async function handleLogin() {
+    const id = document.getElementById('login-id').value;
+    const pw = document.getElementById('login-pw').value;
+    const err = document.getElementById('login-error');
+    const btn = document.getElementById('btn-login');
+
+    if (!id || !pw) {
+        err.innerText = '아이디와 비밀번호를 입력해주세요.';
+        err.style.display = 'block';
+        return;
+    }
+
+    btn.disabled = true;
+    btn.innerText = '인증 중...';
+
+    try {
+        const res = await fetch(state.apiUrl, {
+            method: 'POST',
+            body: JSON.stringify({
+                type: 'LOGIN',
+                payload: { id, pw }
+            })
+        });
+        const result = await res.json();
+
+        if (result.status === 'success') {
+            state.sessionToken = result.token;
+            sessionStorage.setItem('samjin_session_token', result.token);
+            document.getElementById('login-overlay').style.display = 'none';
+            log('관리자 로그인 성공', 'var(--success)');
+            fetchData();
+        } else {
+            throw new Error(result.msg);
+        }
+    } catch (e) {
+        err.innerText = e.message || '로그인 실패';
+        err.style.display = 'block';
+    } finally {
+        btn.disabled = false;
+        btn.innerText = 'Login';
+    }
 }
 
 function applyTheme(theme) {
@@ -311,9 +389,23 @@ async function fetchData() {
     }
     document.getElementById('update-ts').textContent = '동기화 중...';
     try {
-        const res = await fetch(state.apiUrl);
-        if (!res.ok) throw new Error('서버 응답 오류');
-        state.data = await res.json();
+        const url = new URL(state.apiUrl);
+        url.searchParams.append('token', state.sessionToken);
+        
+        const res = await fetch(url);
+        const result = await res.json();
+        
+        if (result.status === 'error') {
+            if (result.msg.includes('token')) {
+                sessionStorage.removeItem('samjin_session_token');
+                state.sessionToken = null;
+                showLogin();
+                return;
+            }
+            throw new Error(result.msg);
+        }
+        
+        state.data = result;
         
         // 서버에서 받은 임계치가 있다면 업데이트 (단, 로컬 저장값이 없을 경우에만 덮어쓰거나 선택적 병합 가능)
         // 여기서는 서버 데이터를 최신 "기준값"으로 동기화합니다.
@@ -424,7 +516,11 @@ async function saveRawData() {
     try {
         const res = await fetch(state.apiUrl, {
             method: 'POST',
-            body: JSON.stringify({ type: 'UPDATE_RAW_DATA', payload: state.uploadedRows })
+            body: JSON.stringify({ 
+                type: 'UPDATE_RAW_DATA', 
+                token: state.sessionToken,
+                payload: state.uploadedRows 
+            })
         });
         const result = await res.json();
         if (result.status === 'success') {
@@ -883,7 +979,14 @@ async function saveConfig() {
     const url = document.getElementById('api-url-input').value;
     if(url) { localStorage.setItem('samjin_qms_api_url', url); state.apiUrl = url; }
     try {
-        await fetch(state.apiUrl, { method:'POST', body: JSON.stringify({type:'SAVE_CONFIG', payload: p}) });
+        await fetch(state.apiUrl, { 
+            method:'POST', 
+            body: JSON.stringify({
+                type:'SAVE_CONFIG', 
+                token: state.sessionToken,
+                payload: p
+            }) 
+        });
         state.thresholds = p; log('시스템 파라미터가 저장되었습니다.');
     } catch(e) { log('저장 실패', 'var(--danger)'); }
 }
@@ -893,7 +996,14 @@ async function saveLineBalance() {
     try {
         const btn = document.getElementById('btn-save-plan');
         btn.innerText = '저장 중...'; btn.disabled = true;
-        await fetch(state.apiUrl, { method:'POST', body: JSON.stringify({type:'SAVE_LINE_BALANCE', payload: state.simulators}) });
+        await fetch(state.apiUrl, { 
+            method:'POST', 
+            body: JSON.stringify({
+                type:'SAVE_LINE_BALANCE', 
+                token: state.sessionToken,
+                payload: state.simulators
+            }) 
+        });
         log('라인 밸런싱 모의 결과가 클라우드에 영구 적용(저장)되었습니다.');
         btn.innerText = '시뮬레이션 클라우드 저장'; btn.disabled = false;
         alert('구글 시트(생산계획 관리)에 시뮬레이션 설정이 성공적으로 저장되었습니다!');
