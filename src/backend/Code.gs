@@ -1,4 +1,4 @@
-const APP_VERSION = 'v8.0 (240421-Stable)'; // [최종] 초기 구조 안정화 버전
+const APP_VERSION = 'v8.1 (240422-Secure)'; // 보안 강화 버전
 const RAW_HEADERS_ROW = 2; // 2행이 헤더 (Data는 3행부터)
 const IDX = {
   month: 0, date: 3, seong: 4, jorip: 5, reel: 6, final: 7, 
@@ -127,6 +127,7 @@ function doPost(e) {
       } else {
         return ContentService.createTextOutput(JSON.stringify({
           status: 'error',
+          version: APP_VERSION,
           msg: '아이디 또는 비밀번호가 일치하지 않습니다.'
         })).setMimeType(ContentService.MimeType.JSON);
       }
@@ -181,11 +182,14 @@ function doPost(e) {
         .setMimeType(ContentService.MimeType.JSON);
     }
 
-    return ContentService.createTextOutput(JSON.stringify({status: 'success'}))
-      .setMimeType(ContentService.MimeType.JSON);
+    return ContentService.createTextOutput(JSON.stringify({
+      status: 'success',
+      version: APP_VERSION
+    })).setMimeType(ContentService.MimeType.JSON);
   } catch (err) {
     return ContentService.createTextOutput(JSON.stringify({
       status: 'error',
+      version: APP_VERSION,
       msg: '처리 중 에러 발생: ' + err.toString()
     })).setMimeType(ContentService.MimeType.JSON);
   }

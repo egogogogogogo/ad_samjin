@@ -3,8 +3,10 @@
  */
 
 const state = {
-    // 1순위: LocalStorage, 2순위: config.js (CONFIG)
-    apiUrl: (typeof CONFIG !== 'undefined' && CONFIG.apiUrl) ? CONFIG.apiUrl : (localStorage.getItem('samjin_qms_api_url') || 'https://script.google.com/macros/s/AKfycbzpIkOaGNqNbLIGh71tgr-31AhgMt0IX4cq6qrbQk9yZo4yn6T6lD9bbPXXvTGIR1oR/exec'),
+    // 1순위: config.js (CONFIG)가 최신 배포 정보를 담고 있으므로 최우선
+    // 2순위: LocalStorage (수동 설정 시 사용)
+    // 3순위: 하드코딩된 최신 기본값
+    apiUrl: (typeof CONFIG !== 'undefined' && CONFIG.apiUrl) ? CONFIG.apiUrl : (localStorage.getItem('samjin_qms_api_url') || 'https://script.google.com/macros/s/AKfycbyMD-xl89BwEEfhpeQjyaxe8-xMgAnCVeJJ7nw4nc43wg5OksEIN6xj15468Nfr6LPc/exec'),
     theme: localStorage.getItem('samjin_theme') || 'dark',
     activeTab: 'dashboard',
     activeDashTab: 'summary',
@@ -14,7 +16,7 @@ const state = {
     activeSubTab: 'total',
     data: null,
     // [보안] 세션 토큰 및 Supabase 설정
-    sessionToken: sessionStorage.getItem('samjin_session_token'),
+    sessionToken: sessionStorage.getItem('samjin_session_token_v2'), // 키 변경으로 캐시 무효화
     supabase: null,
     // 기본 임계치는 CONFIG에서 가져오되, 없을 경우 절대 누락되지 않도록 하드코딩된 기본값과 병합
     thresholds: {
@@ -218,7 +220,7 @@ async function handleLogin() {
 
         if (result.status === 'success') {
             state.sessionToken = result.token;
-            sessionStorage.setItem('samjin_session_token', result.token);
+            sessionStorage.setItem('samjin_session_token_v2', result.token);
             
             // 로그인 성공 시 컨텐츠 표시
             document.getElementById('login-overlay').style.display = 'none';
@@ -427,7 +429,7 @@ async function fetchData() {
             state.thresholds = { ...state.thresholds, ...state.data.thresholds };
         }
         
-        log(`데이터 연동 성공!`);
+        log(`데이터 연동 성공! (Server: ${result.version || 'v1.0'})`);
         renderUI();
         document.getElementById('update-ts').textContent = `최종 동기화: ${new Date().toLocaleTimeString()}`;
     } catch (e) { 

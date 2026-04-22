@@ -4,7 +4,7 @@
  */
 const CONFIG = {
     // 앱 시작 시 사용할 기본 API URL
-    apiUrl: 'https://script.google.com/macros/s/AKfycbzpIkOaGNqNbLIGh71tgr-31AhgMt0IX4cq6qrbQk9yZo4yn6T6lD9bbPXXvTGIR1oR/exec', 
+    apiUrl: 'https://script.google.com/macros/s/AKfycbyMD-xl89BwEEfhpeQjyaxe8-xMgAnCVeJJ7nw4nc43wg5OksEIN6xj15468Nfr6LPc/exec', 
 
     // 기본 임계치 설정 (서버 데이터가 없거나 파일 로드 실패 시 사용)
     thresholds: {
