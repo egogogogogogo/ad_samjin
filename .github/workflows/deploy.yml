@@ -51,12 +51,19 @@ jobs:
         id: deploy_step
         run: |
           set -o pipefail
-          echo "--- Clasp Status ---"
-          npx clasp status || { echo "❌ Clasp status check failed. Check CLASP_SCRIPT_ID and CLASPRC_JSON."; exit 1; }
+          echo "--- Finding Existing Deployment ---"
+          # 웹 앱 유형의 기존 배포 ID 추출
+          DEPLOY_ID=$(npx clasp deployments | grep -B 1 "web app" | head -n 1 | awk '{print $2}' || true)
           
-          echo "--- Executing Deployment ---"
-          # 결과를 임시 파일에 저장하여 파싱 오류 방지
-          npx clasp deploy -d "Auto-deployed via GitHub Actions" > deploy_log.txt 2>&1 || { cat deploy_log.txt; echo "❌ Clasp deploy failed."; exit 1; }
+          if [ -z "$DEPLOY_ID" ]; then
+            echo "::notice::No existing Web App deployment found. Creating new one..."
+            npx clasp deploy -d "Auto-deployed via GitHub Actions" > deploy_log.txt 2>&1
+          else
+            echo "Found existing Deployment ID: $DEPLOY_ID"
+            echo "--- Updating Existing Deployment ---"
+            npx clasp deploy -i "$DEPLOY_ID" -d "Auto-deployed via GitHub Actions" > deploy_log.txt 2>&1
+          fi
+          
           cat deploy_log.txt
           
           # URL 추출
