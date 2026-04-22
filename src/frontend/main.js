@@ -4,7 +4,7 @@
 
 const state = {
     // 1순위: LocalStorage, 2순위: config.js (CONFIG)
-    apiUrl: (typeof CONFIG !== 'undefined' && CONFIG.apiUrl) ? CONFIG.apiUrl : (localStorage.getItem('samjin_qms_api_url') || ''),
+    apiUrl: (typeof CONFIG !== 'undefined' && CONFIG.apiUrl) ? CONFIG.apiUrl : (localStorage.getItem('samjin_qms_api_url') || 'https://script.google.com/macros/s/AKfycbzpIkOaGNqNbLIGh71tgr-31AhgMt0IX4cq6qrbQk9yZo4yn6T6lD9bbPXXvTGIR1oR/exec'),
     theme: localStorage.getItem('samjin_theme') || 'dark',
     activeTab: 'dashboard',
     activeDashTab: 'summary',
@@ -13,8 +13,14 @@ const state = {
     customFilter: { start: '', end: '' },
     activeSubTab: 'total',
     data: null,
-    // 기본 임계치는 CONFIG에서 가져오거나 하드코딩된 기본값 사용
-    thresholds: (typeof CONFIG !== 'undefined' ? { ...CONFIG.thresholds } : { ppm: 500, monthlyTarget: 4500000, defectLimit: 80, capMin: 410 }),
+    // 기본 임계치는 CONFIG에서 가져오되, 없을 경우 절대 누락되지 않도록 하드코딩된 기본값과 병합
+    thresholds: {
+        ppm: 500,
+        monthlyTarget: 4500000,
+        defectLimit: 80,
+        capMin: 410,
+        ...(typeof CONFIG !== 'undefined' ? CONFIG.thresholds : {})
+    },
     sort: { key: 'date', order: 'asc' },
     charts: {},
     drillDown: { active: false, process: null },
