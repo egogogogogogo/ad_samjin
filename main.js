@@ -140,6 +140,10 @@ function initApp() {
     const btnDownTmp = document.getElementById('btn-download-template');
     if(btnDownTmp) btnDownTmp.onclick = downloadTemplate;
 
+    // [보안] 로그인 전에는 메인 컨텐츠 숨김
+    document.querySelector('.sidebar').style.display = 'none';
+    document.querySelector('.main-content').style.display = 'none';
+
     // [보안] 로그인 이벤트 바인딩
     document.getElementById('btn-login').addEventListener('click', handleLogin);
     document.getElementById('login-pw').addEventListener('keypress', (e) => {
@@ -174,6 +178,10 @@ function initSecurity() {
     if (!state.sessionToken) {
         showLogin();
     } else {
+        // [보안] 세션이 있으면 컨텐츠 표시
+        document.querySelector('.sidebar').style.display = 'flex';
+        document.querySelector('.main-content').style.display = 'flex';
+        
         if (state.apiUrl) fetchData();
         else switchTab('settings');
     }
@@ -211,11 +219,17 @@ async function handleLogin() {
         if (result.status === 'success') {
             state.sessionToken = result.token;
             sessionStorage.setItem('samjin_session_token', result.token);
+            
+            // 로그인 성공 시 컨텐츠 표시
             document.getElementById('login-overlay').style.display = 'none';
-            log('관리자 로그인 성공', 'var(--success)');
+            document.querySelector('.sidebar').style.display = 'flex';
+            document.querySelector('.main-content').style.display = 'flex';
+            
+            log(`관리자 로그인 성공 (Server: ${result.version || 'v1.0'})`, 'var(--success)');
             fetchData();
         } else {
-            throw new Error(result.msg);
+            console.error('Login Failed:', result.msg);
+            throw new Error(result.msg || '인증 정보가 올바르지 않습니다.');
         }
     } catch (e) {
         err.innerText = e.message || '로그인 실패';
