@@ -1,12 +1,15 @@
 /**
- * Samjin QMS - Default Configuration
- * 이 파일은 배포 시 CI/CD 파이프라인에 의해 자동 생성/업데이트될 수 있습니다.
+ * Samjin QMS - Supabase Configuration
  */
 const CONFIG = {
-    // 앱 시작 시 사용할 기본 API URL
+    // Supabase Project 정보
+    supabaseUrl: 'https://nupkhceajanwdphkqqtp.supabase.co',
+    supabaseKey: 'sb_publishable_TeIzwFwG1o41qDqeR4qpgg_MPpdV3Ag',
+
+    // 기존 GAS URL (하이브리드 운영 또는 백업용으로 유지)
     apiUrl: 'https://script.google.com/macros/s/AKfycbyMD-xl89BwEEfhpeQjyaxe8-xMgAnCVeJJ7nw4nc43wg5OksEIN6xj15468Nfr6LPc/exec', 
 
-    // 기본 임계치 설정 (서버 데이터가 없거나 파일 로드 실패 시 사용)
+    // 기본 임계치 설정 (DB 데이터가 없을 경우 사용)
     thresholds: {
         ppm: 500,
         monthlyTarget: 4500000,

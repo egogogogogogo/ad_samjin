@@ -30,8 +30,15 @@ const state = {
     charts: {},
     drillDown: { active: false, process: null },
     simulators: [], 
-    uploadedRows: [] // Temporary storage for parsed Excel data
+    uploadedRows: [], // Temporary storage for parsed Excel data
+    supabase: null
 };
+
+// Supabase 클라이언트 초기화
+if (typeof supabase !== 'undefined' && CONFIG.supabaseUrl) {
+    state.supabase = supabase.createClient(CONFIG.supabaseUrl, CONFIG.supabaseKey);
+    console.log('Supabase Engine Initialized');
+}
 
 document.addEventListener('DOMContentLoaded', initApp);
 
@@ -196,49 +203,24 @@ function showLogin() {
 async function handleLogin() {
     const id = document.getElementById('login-id').value;
     const pw = document.getElementById('login-pw').value;
-    const err = document.getElementById('login-error');
-    const btn = document.getElementById('btn-login');
+    
+    // Supabase 전환 시에는 일단 로컬에서 관리자 계정 체크 (추후 Supabase Auth로 고도화 가능)
+    const adminId = 'admin';
+    const adminPw = '1234';
 
-    if (!id || !pw) {
-        err.innerText = '아이디와 비밀번호를 입력해주세요.';
-        err.style.display = 'block';
-        return;
-    }
-
-    btn.disabled = true;
-    btn.innerText = '인증 중...';
-
-    try {
-        const res = await fetch(state.apiUrl, {
-            method: 'POST',
-            body: JSON.stringify({
-                type: 'LOGIN',
-                payload: { id, pw }
-            })
-        });
-        const result = await res.json();
-
-        if (result.status === 'success') {
-            state.sessionToken = result.token;
-            sessionStorage.setItem('samjin_session_token_v2', result.token);
-            
-            // 로그인 성공 시 컨텐츠 표시
-            document.getElementById('login-overlay').style.display = 'none';
-            document.querySelector('.sidebar').style.display = 'flex';
-            document.querySelector('.main-content').style.display = 'flex';
-            
-            log(`관리자 로그인 성공 (Server: ${result.version || 'v1.0'})`, 'var(--success)');
-            fetchData();
-        } else {
-            console.error('Login Failed:', result.msg);
-            throw new Error(result.msg || '인증 정보가 올바르지 않습니다.');
-        }
-    } catch (e) {
-        err.innerText = e.message || '로그인 실패';
-        err.style.display = 'block';
-    } finally {
-        btn.disabled = false;
-        btn.innerText = 'Login';
+    if (id === adminId && pw === adminPw) {
+        state.sessionToken = 'supabase_session_' + Date.now();
+        sessionStorage.setItem('samjin_session_token_v2', state.sessionToken);
+        
+        // 로그인 성공 시 컨텐츠 표시
+        document.getElementById('login-overlay').style.display = 'none';
+        document.querySelector('.sidebar').style.display = 'flex';
+        document.querySelector('.main-content').style.display = 'flex';
+        
+        log(`관리자 로그인 성공 (Mode: Supabase Transition)`, 'var(--success)');
+        fetchData();
+    } else {
+        alert('아이디 또는 비밀번호가 일치하지 않습니다.');
     }
 }
 
@@ -380,7 +362,7 @@ function aggregateSingleSummary(arr) {
 function getDynamicTarget(timeframe) {
     if (!state.data || !state.data.plan) return state.thresholds.monthlyTarget;
     let target = 0;
-    const plans = state.data.plan;
+    const plans = state.data.lineBalance;
     if (timeframe === 'monthly') {
         const m = state.filterValue ? parseInt(state.filterValue.split('-')[1]) : new Date().getMonth()+1;
         plans.filter(p => p.월 == m && p.공정 === '최종').forEach(p => target += p.목표수량);
@@ -399,41 +381,47 @@ function log(msg, color = 'var(--success)') {
 }
 
 async function fetchData() {
-    if (!state.apiUrl) {
-        log('API URL이 설정되지 않았습니다. 설정을 확인하세요.', 'var(--warning)');
+    if (!state.supabase) {
+        log('Supabase가 초기화되지 않았습니다.', 'var(--danger)');
         return;
     }
-    document.getElementById('update-ts').textContent = '동기화 중...';
+    document.getElementById('update-ts').textContent = 'Supabase 동기화 중...';
+    
     try {
-        const url = new URL(state.apiUrl);
-        url.searchParams.append('token', state.sessionToken);
+        // 1. 설정값(Thresholds) 가져오기
+        const { data: configData } = await state.supabase
+            .from('app_config')
+            .select('*');
         
-        const res = await fetch(url);
-        const result = await res.json();
-        
-        if (result.status === 'error') {
-            if (result.msg.includes('token')) {
-                sessionStorage.removeItem('samjin_session_token');
-                state.sessionToken = null;
-                showLogin();
-                return;
-            }
-            throw new Error(result.msg);
+        if (configData) {
+            const thresh = configData.find(c => c.key === 'thresholds');
+            if (thresh) state.thresholds = { ...state.thresholds, ...thresh.value };
+            
+            const lb = configData.find(c => c.key === 'line_balance');
+            if (lb) state.data = { ...state.data, lineBalance: lb.value || [] };
         }
-        
-        state.data = result;
-        
-        // 서버에서 받은 임계치가 있다면 업데이트 (단, 로컬 저장값이 없을 경우에만 덮어쓰거나 선택적 병합 가능)
-        // 여기서는 서버 데이터를 최신 "기준값"으로 동기화합니다.
-        if (state.data.thresholds) {
-            state.thresholds = { ...state.thresholds, ...state.data.thresholds };
-        }
-        
-        log(`데이터 연동 성공! (Server: ${result.version || 'v1.0'})`);
+
+        // 2. 생산 데이터 가져오기
+        const { data: prodData, error } = await state.supabase
+            .from('production_data')
+            .select('*')
+            .order('date', { ascending: false });
+
+        if (error) throw error;
+
+        // 구글 시트 포맷과 호환되도록 데이터 가공
+        state.data = {
+            ...state.data,
+            status: 'success',
+            version: 'Supabase v1.1',
+            daily: prodData || []
+        };
+
+        log(`Supabase 데이터 연동 성공! (${prodData ? prodData.length : 0}행)`);
         renderUI();
-        document.getElementById('update-ts').textContent = `최종 동기화: ${new Date().toLocaleTimeString()}`;
-    } catch (e) { 
-        log(`[통신 에러] ${e.message}`, 'var(--danger)'); 
+        document.getElementById('update-ts').textContent = `최종 동기화(Supabase): ${new Date().toLocaleTimeString()}`;
+    } catch (e) {
+        log(`[Supabase 에러] ${e.message}`, 'var(--danger)');
         document.getElementById('update-ts').textContent = '동기화 실패';
     }
 }
@@ -523,34 +511,55 @@ function renderUploadPreview() {
 }
 
 async function saveRawData() {
-    if (!state.apiUrl || !state.uploadedRows.length) return;
-    if (!confirm('기본 데이터를 모두 삭제하고 이 파일의 내용으로 "새로고침" 하시겠습니까?')) return;
+    if (!state.supabase || !state.uploadedRows.length) return;
+    if (!confirm('Supabase의 기존 데이터를 유지하면서 새로운 데이터를 업로드하시겠습니까? (중복 데이터는 날짜 기준으로 처리됩니다)')) return;
     
     const btn = document.getElementById('btn-save-raw');
-    btn.disabled = true; btn.innerText = '데이터 교체 중...';
+    btn.disabled = true; btn.innerText = 'Supabase 저장 중...';
     
     try {
-        const res = await fetch(state.apiUrl, {
-            method: 'POST',
-            body: JSON.stringify({ 
-                type: 'UPDATE_RAW_DATA', 
-                token: state.sessionToken,
-                payload: state.uploadedRows 
-            })
-        });
-        const result = await res.json();
-        if (result.status === 'success') {
-            alert(`업로드 성공!\n총 ${result.added || 0}건의 데이터가 구글 시트에 정상 반영되었습니다.`);
-            
-            // 초기화
-            state.uploadedRows = [];
-            document.getElementById('preview-card').style.display = 'none';
-            document.getElementById('upload-summary').style.display = 'none';
-            btn.style.display = 'none';
-            fetchData(); 
-        } else {
-            throw new Error(result.msg || '서버 처리 오류');
-        }
+        // 엑셀 행 데이터를 Supabase 테이블 구조로 매핑 (Code.gs의 로직을 프론트로 이전)
+        const rows = state.uploadedRows.slice(2); // 헤더 제외
+        const payload = rows.map(r => ({
+            date: r[3],
+            month: parseInt(r[0]),
+            week_num: r[1],
+            seong_qty: parseInt(r[4]) || 0,
+            jorip_qty: parseInt(r[5]) || 0,
+            reel_qty: parseInt(r[6]) || 0,
+            final_qty: parseInt(r[7]) || 0,
+            defect_qty: parseInt(r[31]) || 0,
+            defect_sq: parseInt(r[32]) || 0,
+            defect_sc: parseInt(r[33]) || 0,
+            defect_co: parseInt(r[34]) || 0,
+            defect_sp: parseInt(r[35]) || 0,
+            defect_ti: parseInt(r[36]) || 0,
+            defect_et: parseInt(r[37]) || 0,
+            cap_avg: parseFloat(r[39]) || 0,
+            cap_min: parseFloat(r[40]) || 0,
+            cap_max: parseFloat(r[41]) || 0,
+            remark: r[38] || '',
+            machine_data: {
+                s5: r[8], s6: r[9], s7: r[10], s8: r[11], s9: r[12],
+                j1: r[13], j2: r[14], j3: r[15], j5: r[16], j6: r[17],
+                j7: r[18], j8: r[19], j9: r[20], j10: r[21], j11: r[22], j12: r[23],
+                r1: r[24], r2: r[25], r3: r[26], r4: r[27],
+                f1: r[28], f2: r[29], f3: r[30]
+            }
+        })).filter(row => row.date);
+
+        const { data, error } = await state.supabase
+            .from('production_data')
+            .upsert(payload, { onConflict: 'date' }); // 날짜 기준 중복 방지
+
+        if (error) throw error;
+
+        alert(`Supabase 업로드 성공!\n총 ${payload.length}건의 데이터가 반영되었습니다.`);
+        state.uploadedRows = [];
+        document.getElementById('preview-card').style.display = 'none';
+        document.getElementById('upload-summary').style.display = 'none';
+        btn.style.display = 'none';
+        fetchData();
     } catch (e) {
         alert('저장 실패: ' + e.message);
     } finally {
@@ -986,47 +995,44 @@ function renderSettings() {
 }
 
 async function saveConfig() { 
+    if (!state.supabase) return;
     const p = {
         ppm: document.getElementById('th-ppm').value,
         monthlyTarget: document.getElementById('th-target').value,
         defectLimit: document.getElementById('th-defect').value,
         capMin: document.getElementById('th-cap').value
     };
-    const url = document.getElementById('api-url-input').value;
-    if(url) { localStorage.setItem('samjin_qms_api_url', url); state.apiUrl = url; }
+    
     try {
-        await fetch(state.apiUrl, { 
-            method:'POST', 
-            body: JSON.stringify({
-                type:'SAVE_CONFIG', 
-                token: state.sessionToken,
-                payload: p
-            }) 
-        });
-        state.thresholds = p; log('시스템 파라미터가 저장되었습니다.');
-    } catch(e) { log('저장 실패', 'var(--danger)'); }
+        const { error } = await state.supabase
+            .from('app_config')
+            .upsert({ key: 'thresholds', value: p });
+            
+        if (error) throw error;
+        state.thresholds = p; 
+        log('Supabase에 시스템 파라미터가 저장되었습니다.');
+    } catch(e) { log('저장 실패: ' + e.message, 'var(--danger)'); }
 }
 
 async function saveLineBalance() {
-    if(!state.apiUrl || !state.simulators.length) return;
+    if (!state.supabase || !state.simulators.length) return;
     try {
         const btn = document.getElementById('btn-save-plan');
-        btn.innerText = '저장 중...'; btn.disabled = true;
-        await fetch(state.apiUrl, { 
-            method:'POST', 
-            body: JSON.stringify({
-                type:'SAVE_LINE_BALANCE', 
-                token: state.sessionToken,
-                payload: state.simulators
-            }) 
-        });
-        log('라인 밸런싱 모의 결과가 클라우드에 영구 적용(저장)되었습니다.');
+        btn.innerText = 'Supabase 저장 중...'; btn.disabled = true;
+        
+        const { error } = await state.supabase
+            .from('app_config')
+            .upsert({ key: 'line_balance', value: state.simulators });
+
+        if (error) throw error;
+        
+        log('라인 밸런싱 결과가 Supabase에 영구 저장되었습니다.');
         btn.innerText = '시뮬레이션 클라우드 저장'; btn.disabled = false;
-        alert('구글 시트(생산계획 관리)에 시뮬레이션 설정이 성공적으로 저장되었습니다!');
-        fetchData(); // reload fresh data
+        alert('Supabase에 시뮬레이션 설정이 성공적으로 저장되었습니다!');
+        fetchData(); 
     } catch(e) { 
-        log('저장 실패', 'var(--danger)'); 
-        alert('저장에 실패했습니다. 네트워크 상태나 구글 시트를 확인해주세요.');
+        log('저장 실패: ' + e.message, 'var(--danger)'); 
+        alert('저장에 실패했습니다: ' + e.message);
         const btn = document.getElementById('btn-save-plan');
         if(btn) { btn.innerText = '시뮬레이션 클라우드 저장'; btn.disabled = false; }
     }
