@@ -8,7 +8,8 @@
     "push": "clasp push",
     "watch": "clasp push --watch",
     "deploy": "clasp deploy",
-    "open": "clasp open"
+    "open": "clasp open",
+    "ship": "clasp push -f && git add . && git commit -m \"deploy: integrated sync\" && git push"
   },
   "devDependencies": {
     "@google/clasp": "^2.4.2"
