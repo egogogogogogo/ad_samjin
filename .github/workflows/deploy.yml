@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 env:
-  # Node 20 관련 경고를 방지하고 Node 24 런타임 사용을 허용
+  # Node 20 지원 중단에 따른 최신 Node 24 런타임 사용 강제 및 경고 제거
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
@@ -20,7 +20,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '24'
 
       - name: Install dependencies
         run: npm install
