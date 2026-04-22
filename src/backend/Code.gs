@@ -112,12 +112,16 @@ function doPost(e) {
     // [보안] 로그인 요청은 토큰 체크 제외
     if (params.type === 'LOGIN') {
       const props = PropertiesService.getScriptProperties();
-      const adminId = props.getProperty('ADMIN_ID') || 'admin';
-      const adminPw = props.getProperty('ADMIN_PW') || '1234'; // 초기값
+      const adminId = (props.getProperty('ADMIN_ID') || 'admin').trim();
+      const adminPw = (props.getProperty('ADMIN_PW') || '1234').trim();
       
-      if (params.payload.id === adminId && params.payload.pw === adminPw) {
+      const inputId = (params.payload.id || '').trim();
+      const inputPw = (params.payload.pw || '').trim();
+      
+      if (inputId === adminId && inputPw === adminPw) {
         return ContentService.createTextOutput(JSON.stringify({
           status: 'success',
+          version: APP_VERSION,
           token: createSession()
         })).setMimeType(ContentService.MimeType.JSON);
       } else {
@@ -165,11 +169,15 @@ function doPost(e) {
       }
     } else if (params.type === 'SAVE_CONFIG') {
       const config = {...params.payload};
-      delete config.token; // 토큰은 프로퍼티에 저장하지 않음
+      delete config.token;
       PropertiesService.getScriptProperties().setProperties(config);
     } else if (params.type === 'UPDATE_RAW_DATA') {
       const status = updateRawDataRefresh(ss, params.payload);
       return ContentService.createTextOutput(JSON.stringify(status))
+        .setMimeType(ContentService.MimeType.JSON);
+    } else {
+      // [보안] 정의되지 않은 타입 요청 시 에러 반환
+      return ContentService.createTextOutput(JSON.stringify({status: 'error', msg: '잘못된 요청 타입입니다.'}))
         .setMimeType(ContentService.MimeType.JSON);
     }
 
@@ -178,10 +186,11 @@ function doPost(e) {
   } catch (err) {
     return ContentService.createTextOutput(JSON.stringify({
       status: 'error',
-      msg: '저장 에러: ' + err.toString()
+      msg: '처리 중 에러 발생: ' + err.toString()
     })).setMimeType(ContentService.MimeType.JSON);
   }
 }
+
 
 
 // ── 3. 상세 파싱 (표준 고정 인덱스 기반 단순화) ───────────────────────────
