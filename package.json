@@ -1,17 +1,12 @@
 {
-  "name": "samjin-qms",
+  "name": "jml-mes-system",
   "version": "1.0.0",
-  "description": "Samjin Gasket Quality Management System",
+  "description": "JML MES System - Advanced AX Solution",
   "main": "index.js",
   "scripts": {
-    "login": "clasp login",
-    "push": "clasp push",
-    "watch": "clasp push --watch",
-    "deploy": "clasp deploy",
-    "open": "clasp open",
-    "ship": "clasp push -f && git add . && git commit -m \"deploy: integrated sync\" && git push"
+    "start": "npx serve ./src/frontend"
   },
   "devDependencies": {
-    "@google/clasp": "^2.4.2"
+    "serve": "^14.2.1"
   }
 }
