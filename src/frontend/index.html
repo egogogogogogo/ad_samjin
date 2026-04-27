@@ -10,6 +10,8 @@
     <!-- Scripts -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@sgratzl/chartjs-chart-boxplot@4"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <link rel="stylesheet" href="styles.css">
 </head>
@@ -34,28 +36,28 @@
                 <button id="btn-login" class="btn-primary">로그인</button>
             </div>
             <div class="login-footer">
-                <p>&copy; 2024 JML AX Solution. All rights reserved.</p>
+                <p>&copy; 2026 JML AX Solution. All rights reserved.</p>
             </div>
         </div>
     </div>
 
     <!-- Main App Layout -->
-    <div id="app-container" style="display: none;">
+    <div class="app-layout" id="app-container" style="display: none;">
         <!-- Sidebar -->
         <aside class="sidebar">
             <div class="sidebar-header">
-                <i class="fas fa-layer-group"></i>
-                <span>JML MES</span>
+                <i class="fas fa-microchip" style="color: var(--accent); font-size: 1.4rem;"></i>
+                <span>JML MES System</span>
             </div>
             <nav class="nav-links">
                 <li class="active" data-tab="dashboard"><i class="fas fa-chart-line"></i> 대시보드 요약</li>
-                <li data-tab="quality-data"><i class="fas fa-vial"></i> 실시간 품질데이터</li>
-                <li data-tab="prod-plan"><i class="fas fa-calendar-alt"></i> 생산계획 관리</li>
-                <li data-tab="data-mgmt"><i class="fas fa-rocket"></i> Raw Data 업데이트</li>
-                <li data-tab="settings"><i class="fas fa-cog"></i> 시스템 설정</li>
-            </nav>
+                <li data-tab="quality-data"><i class="fas fa-microscope"></i> 실시간 품질데이터</li>
+                <li data-tab="prod-plan"><i class="fas fa-tasks"></i> 생산계획 관리</li>
+                <li data-tab="data-mgmt"><i class="fas fa-cloud-upload-alt"></i> Raw Data 업데이트</li>
+                <li data-tab="settings"><i class="fas fa-sliders-h"></i> 시스템 설정</li>
+            </ul>
             <div class="sidebar-footer-info">
-                <small>v9.0 (Supabase-Native)</small>
+                <small>v10.0 (Full Migration)</small>
             </div>
             <div class="sidebar-footer">
                 <div class="user-info">
@@ -72,22 +74,21 @@
             <header class="top-bar">
                 <div class="top-bar-left">
                     <h2 id="page-title">Executive Dashboard</h2>
-                    <p id="last-sync-time">최종 동기화(Supabase): -</p>
+                    <p id="last-sync-time">최종 동기화: -</p>
                 </div>
                 <div class="top-bar-actions">
-                    <!-- Date Range Filters -->
-                    <div class="filter-group">
-                        <button class="filter-btn" data-range="daily">일간</button>
-                        <button class="filter-btn" data-range="weekly">주간</button>
-                        <button class="filter-btn active" data-range="monthly">월간</button>
-                        <button class="filter-btn" data-range="yearly">연간</button>
-                        <button class="filter-btn" data-range="custom">사용자지정</button>
+                    <div class="filter-group-horizontal" id="dashboard-date-modes">
+                        <button class="filter-btn" data-mode="daily">일간</button>
+                        <button class="filter-btn" data-mode="weekly">주간</button>
+                        <button class="filter-btn active" data-mode="monthly">월간</button>
+                        <button class="filter-btn" data-mode="yearly">연간</button>
+                        <button class="filter-btn" data-mode="custom">사용자지정</button>
                     </div>
-                    <div class="date-display">
-                        <span id="current-date-range">2026년 04월</span>
-                        <input type="month" id="date-picker-month" value="2026-04">
+                    <div class="date-input-wrap-horizontal" id="date-input-container">
+                        <input type="month" id="date-picker-main" class="custom-date-picker-compact">
+                        <!-- Custom range inputs will be injected here via JS if needed -->
                     </div>
-                    <button id="btn-refresh" class="btn-secondary"><i class="fas fa-sync-alt"></i></button>
+                    <button id="btn-refresh" class="btn-secondary-compact"><i class="fas fa-sync-alt"></i></button>
                 </div>
             </header>
 
@@ -105,31 +106,47 @@
                     <!-- Dynamic KPI cards here -->
                 </div>
 
+                <!-- AI Insight Box (Strategic Feedback) -->
+                <div class="card insight-card" id="ai-insight-container">
+                    <div class="insight-header">
+                        <i class="fas fa-brain"></i>
+                        <span>AI 전략 분석 리포트</span>
+                    </div>
+                    <div class="insight-content" id="ai-insight-text">
+                        데이터를 동기화 중입니다... 해당 기간의 종합 생산 및 품질 지표를 분석하여 여기에 표시합니다.
+                    </div>
+                </div>
+
                 <!-- Charts Area -->
-                <div class="charts-grid">
-                    <div class="chart-card large">
+                <!-- Re-structured Chart Grid -->
+                <div class="dashboard-chart-layout">
+                    <!-- Row 1: Trend (Full Width) -->
+                    <div class="card chart-full-width">
                         <div class="card-header">
                             <h3><i class="fas fa-chart-area"></i> 생산 및 불량 트렌드 (PPM)</h3>
-                            <div class="chart-filters">
-                                <button class="tf-btn active" data-tf="daily">일간</button>
-                                <button class="tf-btn" data-tf="weekly">주간</button>
-                                <button class="tf-btn" data-tf="monthly">월간</button>
-                            </div>
                         </div>
-                        <div class="chart-wrapper">
+                        <div class="chart-container" style="height: 350px;">
                             <canvas id="mainChart"></canvas>
                         </div>
                     </div>
-                    <div class="chart-card">
-                        <h3><i class="fas fa-chart-pie"></i> 불량 유형 분포 (Pareto)</h3>
-                        <div class="chart-wrapper">
-                            <canvas id="defectChart"></canvas>
+
+                    <!-- Row 2: 50/50 Split -->
+                    <div class="chart-row-split">
+                        <div class="card chart-half-width">
+                            <div class="card-header">
+                                <h3><i class="fas fa-chart-bar"></i> 불량 유형 분포 (Pareto)</h3>
+                            </div>
+                            <div class="chart-container" style="height: 300px;">
+                                <canvas id="defectChart"></canvas>
+                            </div>
                         </div>
-                    </div>
-                    <div class="chart-card">
-                        <h3><i class="fas fa-tasks"></i> 공정별 생산 비중</h3>
-                        <div class="chart-wrapper">
-                            <canvas id="processChart"></canvas>
+                        <div class="card chart-half-width">
+                            <div class="card-header">
+                                <h3><i class="fas fa-chart-pie"></i> 공정별 생산 비중</h3>
+                            </div>
+                            <div class="chart-container" style="height: 300px;">
+                                <canvas id="processChart"></canvas>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -169,6 +186,11 @@
                                 <i class="fas fa-cloud-upload-alt"></i>
                                 <p>파일을 이 곳에 끌어다 놓거나 클릭하세요.</p>
                                 <input type="file" id="file-input" hidden accept=".xlsx">
+                            </div>
+                            <div class="mt-15">
+                                <button id="btn-download-template" class="btn-secondary-compact full-width">
+                                    <i class="fas fa-download"></i> R07 표준 엑셀 템플릿 다운로드
+                                </button>
                             </div>
                             <div id="upload-preview" style="display: none;">
                                 <div class="preview-info">
@@ -212,59 +234,89 @@
                 </div>
             </section>
 
-            <!-- Production Plan & Simulator Tab -->
-            <section id="tab-prod-plan" class="tab-content">
-                <div class="simulator-header">
-                    <h3>라인 밸런싱 최적화 시뮬레이터</h3>
-                    <button id="btn-save-sim" class="btn-accent"><i class="fas fa-save"></i> 현재 시뮬레이션 설정 저장</button>
+            <!-- Quality Data Tab -->
+            <section id="tab-quality-data" class="tab-content">
+                <div class="sub-tab-container" id="quality-sub-tabs">
+                    <button class="sub-tab active" data-sub="total-prod">전체 생산 실적 현황</button>
+                    <button class="sub-tab" data-sub="process-perf">공정별 실적 현황</button>
+                    <button class="sub-tab" data-sub="defect-detail">상세 불량 내역</button>
+                    <button class="sub-tab" data-sub="cap-monitor">Cap 탈거력 모니터링</button>
                 </div>
+                <div class="card mt-15">
+                    <div id="quality-table-container" class="table-container">
+                        <!-- Dynamic History Table -->
+                    </div>
+                </div>
+            </section>
 
-                <div class="simulator-grid">
-                    <!-- Results Card -->
-                    <div class="card sim-result">
+            <!-- Production Plan & Simulator Tab (4-Layer Expert Architecture) -->
+            <section id="tab-prod-plan" class="tab-content">
+                <div class="simulator-expert-layout">
+                    <!-- Layer 1: Conclusion (KPI) -->
+                    <div class="card sim-layer-kpi">
                         <div class="section-label">❶ 최상단 [결론부]: KPI 성과 예측</div>
-                        <div class="sim-kpi-group">
-                            <div class="sim-kpi">
-                                <label>경영 목표 수량 (가변 시뮬레이션용)</label>
+                        <div class="sim-kpi-row">
+                            <div class="sim-kpi-item">
+                                <label>경영 목표 수량 (가변)</label>
                                 <input type="number" id="sim-target-qty" value="6000000">
                             </div>
-                            <div class="sim-kpi">
-                                <label>시뮬레이션 예상 최대 생산량</label>
-                                <div class="sim-value" id="sim-max-prod">로딩 중...</div>
+                            <div class="sim-kpi-item">
+                                <label>예상 최대 생산량</label>
+                                <div class="sim-val" id="sim-max-prod">-</div>
                             </div>
-                            <div class="sim-kpi">
-                                <label>예상 목표 달성률</label>
-                                <div class="sim-value" id="sim-achievement">로딩 중...</div>
+                            <div class="sim-kpi-item">
+                                <label>목표 달성률</label>
+                                <div class="sim-val" id="sim-achievement">-</div>
                             </div>
                         </div>
                     </div>
 
-                    <!-- AI Briefing Card -->
-                    <div class="card sim-briefing">
+                    <!-- Layer 2: AI Diagnosis & Solutions -->
+                    <div class="card sim-layer-briefing">
                         <div class="section-label">❷ AI [진단] 및 [솔루션] 브리핑</div>
-                        <div id="sim-ai-briefing" class="briefing-content">
-                            진단 데이터를 계산 중입니다...
+                        <div id="bottleneck-insight-msg" class="insight-box">
+                            데이터 계산 중...
+                        </div>
+                        <div id="bottleneck-container" class="bottleneck-bars">
+                            <!-- Visual Bars Injected Here -->
                         </div>
                     </div>
 
-                    <!-- Control Card -->
-                    <div class="card sim-controls">
+                    <!-- Layer 3: Controls -->
+                    <div class="card sim-layer-controls">
                         <div class="section-label">❸ 중간단 [조작부]: 밸런싱 파라미터 제어</div>
                         <div class="table-container">
-                            <table>
+                            <table id="plan-simulator-table">
                                 <thead>
                                     <tr>
                                         <th>운영 공정명</th>
                                         <th>시간당 CAPA</th>
-                                        <th>일일 운영시간</th>
-                                        <th>가동 장비수</th>
+                                        <th>일일 가동시간</th>
+                                        <th>장비 대수</th>
                                         <th>운영 일수</th>
-                                        <th>투입 인원</th>
+                                        <th>인원 (참고)</th>
                                     </tr>
                                 </thead>
-                                <tbody id="sim-param-body">
-                                    <!-- Dynamic Rows -->
-                                </tbody>
+                                <tbody id="sim-param-body"></tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Layer 4: Evidence -->
+                    <div class="card sim-layer-evidence">
+                        <div class="section-label">❹ 하단부 [상세 분석부]: 세부 효율 지표 산출 근거</div>
+                        <div class="table-container">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>산출 공정명</th>
+                                        <th>월간 총 CAPA</th>
+                                        <th>일일 총 CAPA</th>
+                                        <th>장비 1대/월 CAPA</th>
+                                        <th>UPH (인당 시간당)</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="sim-evidence-body"></tbody>
                             </table>
                         </div>
                     </div>
@@ -273,33 +325,47 @@
 
             <!-- Settings Tab -->
             <section id="tab-settings" class="tab-content">
-                <div class="card max-w-600">
-                    <h3><i class="fas fa-user-shield"></i> 업체 프로필 및 설정</h3>
-                    <div class="settings-group">
-                        <label>업체명</label>
-                        <input type="text" id="setting-company" readonly>
+                <div class="settings-grid">
+                    <div class="card">
+                        <h3><i class="fas fa-user-shield"></i> 업체 프로필</h3>
+                        <div class="settings-group">
+                            <label>업체명</label>
+                            <input type="text" id="setting-company" readonly>
+                        </div>
+                        <div class="settings-group mt-20">
+                            <label>관리자 이메일</label>
+                            <input type="text" id="setting-email" readonly value="samjin@jml.com">
+                        </div>
                     </div>
-                    <div class="settings-group mt-20">
-                        <h4>품질 임계치 설정 (Thresholds)</h4>
+
+                    <div class="card">
+                        <h3><i class="fas fa-tachometer-alt"></i> 임계치 설정 (Thresholds)</h3>
                         <div class="grid-2col">
                             <div class="input-group">
-                                <label>PPM 한계치</label>
+                                <label>PPM 경고 기준 (이상)</label>
                                 <input type="number" id="set-ppm-limit" value="500">
                             </div>
                             <div class="input-group">
-                                <label>월간 목표수량</label>
+                                <label>월 생산 목표 미달 기준 (이하)</label>
                                 <input type="number" id="set-monthly-target" value="4500000">
                             </div>
+                            <div class="input-group mt-15">
+                                <label>단일 불량 한계치 (이상)</label>
+                                <input type="number" id="set-defect-limit" value="80">
+                            </div>
+                            <div class="input-group mt-15">
+                                <label>Cap 탈거력 위험 기준 (이하)</label>
+                                <input type="number" id="set-cap-risk" value="410">
+                            </div>
                         </div>
+                        <button id="btn-save-settings" class="btn-accent mt-20 full-width">설정값 서버 저장</button>
                     </div>
-                    <button id="btn-save-settings" class="btn-primary mt-20">설정 저장</button>
                 </div>
 
                 <div class="card mt-20">
                     <h3><i class="fas fa-terminal"></i> 실시간 시스템 로그 (Debug Console)</h3>
                     <div id="debug-console" class="debug-console">
-                        <div class="log-entry system">[오전 10:59:21] Supabase 데이터 연동 성공! (v9.0)</div>
-                        <div class="log-entry system">[오전 10:59:21] 관리자 로그인 성공 (Mode: Supabase-Native)</div>
+                        <!-- Logs will be injected here -->
                     </div>
                 </div>
             </section>

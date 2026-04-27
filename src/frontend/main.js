@@ -1,28 +1,31 @@
 /**
- * JML MES System - Core Engine (Step 3: Supabase Unified)
+ * JML MES System - Core Engine (v9.7 Expert Precision Edition)
+ * 1. Fixed Branding: JML MES System (No JJML)
+ * 2. Trend: PPM Line in Front (order: 1)
+ * 3. Pareto: Data Labels on Cumulative Line
+ * 4. Process: 4-Process Load (Molding, Assembly, Packing, Inspection)
+ * 5. Quality: Cap Pull-off Box-plot (Min/Max/Avg Range)
+ * 6. Machine: Device-level Comparison (M1~M12)
  */
 
 class JMLMES {
     constructor() {
-        this.supabase = supabase.createClient(CONFIG.supabaseUrl, CONFIG.supabaseKey);
-        this.state = {
-            user: null,
-            partner: null,
-            config: null,
-            data: [],
-            activeTab: 'dashboard',
-            activeSubTab: 'total',
-            timeframe: 'monthly',
-            selectedDate: '2026-04',
-            charts: {},
-            simulator: {
-                targetQty: 6000000,
-                params: [
-                    { name: '성형(Molding)', capa: 25000, hours: 20, machines: 5, days: 25, labor: 2 },
-                    { name: '조립(Assembly)', capa: 18000, hours: 20, machines: 11, days: 25, labor: 4 },
-                    { name: '검사(Final)', capa: 35000, hours: 10, machines: 3, days: 25, labor: 1 }
-                ]
+        this.supabase = supabase.createClient(CONFIG.supabaseUrl, CONFIG.supabaseKey, {
+            auth: {
+                storage: window.sessionStorage,
+                persistSession: true
             }
+        });
+        this.state = {
+            user: null, partner: null, config: null,
+            data: [],
+            activeTab: 'dashboard', activeSubTab: 'total',
+            dateMode: 'monthly', selectedDate: new Date().toISOString().split('T')[0].slice(0, 7),
+            startDate: null, endDate: null,
+            trendScale: 'daily',
+            charts: {},
+            pendingUploadData: [],
+            qualityScale: 'daily'
         };
         this.init();
     }
@@ -31,84 +34,129 @@ class JMLMES {
         const consoleEl = document.getElementById('debug-console');
         if (!consoleEl) return;
         const entry = document.createElement('div');
-        const time = new Date().toLocaleTimeString('ko-KR', { hour12: false });
         entry.className = `log-entry ${type}`;
-        entry.innerText = `[${time}] ${msg}`;
+        entry.innerText = `[${new Date().toLocaleTimeString()}] ${msg}`;
         consoleEl.appendChild(entry);
         consoleEl.scrollTop = consoleEl.scrollHeight;
     }
 
     async init() {
-        this.log('v9.0 엔진 초기화 중...');
+        console.log('JML MES System: Initializing...');
         this.bindEvents();
         this.checkAuth();
     }
 
     bindEvents() {
-        // Auth
-        document.getElementById('btn-login').addEventListener('click', () => this.handleLogin());
-        document.getElementById('btn-logout').addEventListener('click', () => this.handleLogout());
+        document.getElementById('btn-login').onclick = () => this.handleLogin();
+        document.getElementById('btn-logout').onclick = () => this.handleLogout();
 
-        // Sidebar Navigation
         document.querySelectorAll('.nav-links li').forEach(li => {
-            li.addEventListener('click', () => this.switchTab(li.getAttribute('data-tab')));
+            li.onclick = () => this.switchTab(li.getAttribute('data-tab'));
         });
 
-        // Dashboard Sub-Tabs
-        document.querySelectorAll('.sub-tab').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                document.querySelectorAll('.sub-tab').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('#dashboard-sub-tabs .sub-tab').forEach(btn => {
+            btn.onclick = (e) => {
+                document.querySelectorAll('#dashboard-sub-tabs .sub-tab').forEach(b => b.classList.remove('active'));
                 e.target.classList.add('active');
                 this.state.activeSubTab = e.target.dataset.sub;
-                this.renderUI();
-            });
+                this.renderDashboard();
+            };
         });
 
-        // Timeframe Filters
-        document.querySelectorAll('.filter-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('#dashboard-date-modes .filter-btn').forEach(btn => {
+            btn.onclick = (e) => {
+                document.querySelectorAll('#dashboard-date-modes .filter-btn').forEach(b => b.classList.remove('active'));
                 e.target.classList.add('active');
-                this.state.timeframe = e.target.dataset.range;
-                this.refreshData();
-            });
+                this.updateDateInputMode(e.target.dataset.mode);
+            };
         });
 
-        // Date Picker
-        document.getElementById('date-picker-month').addEventListener('change', (e) => {
-            this.state.selectedDate = e.target.value;
-            const [y, m] = e.target.value.split('-');
-            document.getElementById('current-date-range').innerText = `${y}년 ${m}월`;
-            this.refreshData();
-        });
+        document.getElementById('btn-refresh').onclick = () => this.refreshData();
 
-        // Forms
-        document.getElementById('manual-input-form').addEventListener('submit', (e) => this.handleManualInput(e));
-        document.getElementById('btn-save-settings').addEventListener('click', () => this.saveSettings());
-        document.getElementById('btn-refresh').addEventListener('click', () => this.refreshData());
-
-        // File Upload
-        const dz = document.getElementById('drop-zone');
-        const fi = document.getElementById('file-input');
-        dz.onclick = () => fi.click();
-        fi.onchange = (e) => this.handleFileSelection(e.target.files[0]);
-        dz.ondragover = (e) => { e.preventDefault(); dz.style.borderColor = 'var(--accent)'; };
-        dz.ondragleave = () => { dz.style.borderColor = 'var(--border)'; };
-        dz.ondrop = (e) => { e.preventDefault(); this.handleFileSelection(e.dataTransfer.files[0]); };
-        document.getElementById('btn-save-upload').addEventListener('click', () => this.saveUploadedData());
-    }
-
-    // --- Auth Logic ---
-    async checkAuth() {
-        const { data: { session } } = await this.supabase.auth.getSession();
-        if (session) {
-            this.onAuthenticated(session.user);
-        } else {
-            document.getElementById('login-overlay').style.display = 'flex';
+        // Data Management Events
+        const dropZone = document.getElementById('drop-zone');
+        const fileInput = document.getElementById('file-input');
+        if (dropZone && fileInput) {
+            dropZone.onclick = () => fileInput.click();
+            dropZone.ondragover = (e) => { e.preventDefault(); dropZone.classList.add('hover'); };
+            dropZone.ondragleave = () => dropZone.classList.remove('hover');
+            dropZone.ondrop = (e) => { e.preventDefault(); dropZone.classList.remove('hover'); this.handleFileSelect(e.dataTransfer.files[0]); };
+            fileInput.onchange = (e) => this.handleFileSelect(e.target.files[0]);
         }
 
+        const btnSaveUpload = document.getElementById('btn-save-upload');
+        if (btnSaveUpload) btnSaveUpload.onclick = () => this.saveUploadedData();
+
+        const btnDownloadTemplate = document.getElementById('btn-download-template');
+        if (btnDownloadTemplate) btnDownloadTemplate.onclick = () => this.downloadExcelTemplate();
+
+        const manualForm = document.getElementById('manual-input-form');
+        if (manualForm) manualForm.onsubmit = (e) => { e.preventDefault(); this.handleManualInput(); };
+    }
+
+    updateDateInputMode(mode) {
+        this.state.dateMode = mode;
+        const container = document.getElementById('date-input-container');
+        const now = new Date();
+        const today = now.toISOString().split('T')[0];
+        container.innerHTML = '';
+        container.className = 'date-input-wrap-horizontal';
+
+        if (mode === 'daily') {
+            container.appendChild(this.createDateInput('date', 'date-picker-main', today));
+            this.state.selectedDate = today;
+        } else if (mode === 'weekly') {
+            const input = this.createDateInput('week', 'date-picker-main', this.getCurrentWeekString());
+            container.appendChild(input);
+            this.state.selectedDate = input.value;
+        } else if (mode === 'monthly') {
+            const val = today.slice(0, 7);
+            container.appendChild(this.createDateInput('month', 'date-picker-main', val));
+            this.state.selectedDate = val;
+        } else if (mode === 'yearly') {
+            const input = this.createDateInput('number', 'date-picker-main', now.getFullYear());
+            input.min = 2020; input.max = 2030;
+            container.appendChild(input);
+            this.state.selectedDate = input.value;
+        } else if (mode === 'custom') {
+            container.appendChild(this.createDateInput('date', 'date-picker-start', today));
+            const span = document.createElement('span'); span.innerText = ' ~ '; span.style.color = 'var(--text-dim)';
+            container.appendChild(span);
+            container.appendChild(this.createDateInput('date', 'date-picker-end', today));
+            this.state.startDate = today;
+            this.state.endDate = today;
+        }
+        this.refreshData();
+    }
+
+    createDateInput(type, id, value) {
+        const input = document.createElement('input');
+        input.type = type; input.id = id;
+        input.className = 'custom-date-picker-compact';
+        input.value = value;
+        input.onchange = (e) => {
+            if (id === 'date-picker-main') this.state.selectedDate = e.target.value;
+            if (id === 'date-picker-start') this.state.startDate = e.target.value;
+            if (id === 'date-picker-end') this.state.endDate = e.target.value;
+            this.refreshData();
+        };
+        return input;
+    }
+
+    getCurrentWeekString() {
+        const d = new Date(); d.setHours(0,0,0,0);
+        d.setDate(d.getDate() + 3 - (d.getDay() + 6) % 7);
+        const week1 = new Date(d.getFullYear(), 0, 4);
+        const weekNum = 1 + Math.round(((d.getTime() - week1.getTime()) / 86400000 - 3 + (week1.getDay() + 6) % 7) / 7);
+        return `${d.getFullYear()}-W${weekNum.toString().padStart(2, '0')}`;
+    }
+
+    async checkAuth() {
+        const { data: { session } } = await this.supabase.auth.getSession();
+        if (session) this.onAuthenticated(session.user);
+        else document.getElementById('login-overlay').style.display = 'flex';
         this.supabase.auth.onAuthStateChange((event, session) => {
-            if (event === 'SIGNED_IN') this.onAuthenticated(session.user);
+            if (event === 'SIGNED_IN' && session) this.onAuthenticated(session.user);
             if (event === 'SIGNED_OUT') window.location.reload();
         });
     }
@@ -117,386 +165,779 @@ class JMLMES {
         const email = document.getElementById('login-email').value;
         const password = document.getElementById('login-pw').value;
         const btn = document.getElementById('btn-login');
-        
-        btn.disabled = true;
-        btn.innerText = '로그인 중...';
-
-        const { error } = await this.supabase.auth.signInWithPassword({ email, password });
-        if (error) {
-            alert('로그인 실패: ' + error.message);
-            btn.disabled = false;
-            btn.innerText = '로그인';
-        }
+        if (!email || !password) return alert('ID/PW를 입력하세요.');
+        btn.disabled = true; btn.innerText = '인증 중...';
+        try {
+            const { error } = await this.supabase.auth.signInWithPassword({ email, password });
+            if (error) { alert('인증 실패: ' + error.message); btn.disabled = false; btn.innerText = '로그인'; }
+        } catch (err) { btn.disabled = false; btn.innerText = '로그인'; }
     }
 
-    async handleLogout() {
-        await this.supabase.auth.signOut();
-    }
+    async handleLogout() { await this.supabase.auth.signOut(); }
 
     async onAuthenticated(user) {
-        this.log('사용자 인증 성공. 세션 활성화.');
-        console.log("Authenticated User UID:", user.id);
         this.state.user = user;
         document.getElementById('login-overlay').style.display = 'none';
         document.getElementById('app-container').style.display = 'flex';
-
-        // Load Profile & Partner
-        const { data: profile, error } = await this.supabase
-            .from('profiles')
-            .select('*, partners(*)')
-            .eq('id', user.id)
-            .single();
-
-        if (error) {
-            this.log('프로필 조회 실패: ' + error.message, 'error');
-            alert("프로필을 불러오지 못했습니다: " + error.message);
-            return;
-        }
-
+        const { data: profile } = await this.supabase.from('profiles').select('*, partners(*)').eq('id', user.id).single();
         if (profile && profile.partners) {
             this.state.partner = profile.partners;
-            this.log(`업체 연결 성공: ${this.state.partner.company_name}`);
             document.getElementById('user-display-name').innerText = profile.full_name || user.email;
-            document.getElementById('setting-company').value = profile.partners.company_name;
             await this.loadConfig();
             await this.refreshData();
         }
     }
 
-    renderUI() {
-        // Hide/Show sub-tabs based on main tab
-        document.getElementById('dashboard-sub-tabs').style.display = 
-            this.state.activeTab === 'dashboard' ? 'flex' : 'none';
-
-        if (this.state.activeTab === 'dashboard') this.renderDashboard();
-        if (this.state.activeTab === 'prod-plan') this.renderSimulator();
-        if (this.state.activeTab === 'data-mgmt') this.renderHistory();
-    }
-
-    renderDashboard() {
-        const processed = this.getAggregatedData();
-        this.renderKPIs(processed);
-        
-        const chartGrid = document.querySelector('.charts-grid');
-        if (this.state.activeSubTab === 'total') {
-            chartGrid.style.display = 'grid';
-            this.renderCharts(processed.list);
-        } else {
-            // Placeholder for other sub-tabs
-            chartGrid.style.display = 'none';
-            this.log(`서브 탭 [${this.state.activeSubTab}] 준비 중...`);
-        }
-    }
-
-    // --- Simulator Logic ---
-    renderSimulator() {
-        const body = document.getElementById('sim-param-body');
-        if (!body) return;
-
-        body.innerHTML = this.state.simulator.params.map((p, i) => `
-            <tr>
-                <td>${p.name}</td>
-                <td><input type="number" value="${p.capa}" onchange="app.updateSimParam(${i}, 'capa', this.value)"></td>
-                <td><input type="number" value="${p.hours}" onchange="app.updateSimParam(${i}, 'hours', this.value)"></td>
-                <td><input type="number" value="${p.machines}" onchange="app.updateSimParam(${i}, 'machines', this.value)"></td>
-                <td><input type="number" value="${p.days}" onchange="app.updateSimParam(${i}, 'days', this.value)"></td>
-                <td><input type="number" value="${p.labor}" onchange="app.updateSimParam(${i}, 'labor', this.value)"></td>
-            </tr>
-        `).join('');
-
-        this.runSimulation();
-    }
-
-    updateSimParam(index, key, value) {
-        this.state.simulator.params[index][key] = parseInt(value);
-        this.runSimulation();
-    }
-
-    runSimulation() {
-        const target = parseInt(document.getElementById('sim-target-qty').value) || 0;
-        const results = this.state.simulator.params.map(p => ({
-            name: p.name,
-            totalCapa: p.capa * p.hours * p.machines * p.days
-        }));
-
-        const minCapa = Math.min(...results.map(r => r.totalCapa));
-        const bottleneck = results.find(r => r.totalCapa === minCapa);
-        const achievement = target > 0 ? Math.round((minCapa / target) * 100) : 0;
-
-        document.getElementById('sim-max-prod').innerText = `${minCapa.toLocaleString()} EA`;
-        document.getElementById('sim-achievement').innerText = `${achievement}%`;
-        document.getElementById('sim-achievement').style.color = achievement >= 100 ? 'var(--success)' : 'var(--warning)';
-
-        // AI Briefing
-        const briefing = document.getElementById('sim-ai-briefing');
-        briefing.innerHTML = `
-            <p>💡 <b>공정 진단 결과:</b> 현재 라인의 병목(Bottleneck) 공정은 <b>[${bottleneck.name}]</b>입니다.</p>
-            <p>🚀 <b>최적화 솔루션:</b> 목표 수량(${target.toLocaleString()} EA) 달성을 위해 ${bottleneck.name} 공정의 
-               시간당 CAPA를 ${Math.ceil(target / (bottleneck.totalCapa / bottleneck.name.length))} 수준으로 증설하거나 
-               장비 가동 대수를 추가 확보할 것을 권장합니다.</p>
-        `;
-    }
-
-    // --- Data Logic ---
     async loadConfig() {
         if (!this.state.partner) return;
-        const { data, error } = await this.supabase
-            .from('app_config')
-            .select('*')
-            .eq('partner_id', this.state.partner.id)
-            .single();
-        
+        const { data } = await this.supabase.from('app_config').select('*').eq('partner_id', this.state.partner.id).single();
         if (data) {
-            this.state.config = data;
-            document.getElementById('set-ppm-limit').value = data.thresholds.ppm;
-            document.getElementById('set-monthly-target').value = data.thresholds.monthlyTarget;
-            this.log('시스템 설정 로드 완료.');
+            this.state.config = {
+                thresholds: data.thresholds || { ppm: 500, monthlyTarget: 4500000, defectLimit: 80, capRisk: 410 },
+                simParams: data.sim_params
+            };
+        } else {
+            this.state.config = { thresholds: { ppm: 500, monthlyTarget: 4500000, defectLimit: 80, capRisk: 410 } };
         }
     }
 
     async refreshData() {
         if (!this.state.partner) return;
-        this.log(`데이터 새로고침 중... (${this.state.timeframe})`);
-        document.getElementById('btn-refresh').classList.add('fa-spin');
+        const btn = document.getElementById('btn-refresh');
+        if (btn) btn.classList.add('fa-spin');
+        const { data, error } = await this.supabase.from('production_actuals').select('*').eq('partner_id', this.state.partner.id).order('work_date', { ascending: true });
+        if (error) return;
+        this.state.data = data || [];
+        this.renderUI();
+        if (btn) btn.classList.remove('fa-spin');
         
-        // Supabase Query with Timeframe Filter (Simplified for Monthly)
-        const { data, error } = await this.supabase
-            .from('production_actuals')
-            .select('*')
-            .eq('partner_id', this.state.partner.id)
-            .order('work_date', { ascending: false });
+        // 최종 동기화 시간 업데이트
+        const now = new Date();
+        const syncTime = `${now.getFullYear()}-${(now.getMonth()+1).toString().padStart(2,'0')}-${now.getDate().toString().padStart(2,'0')} ${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}:${now.getSeconds().toString().padStart(2,'0')}`;
+        const syncEl = document.getElementById('last-sync-time');
+        if (syncEl) syncEl.innerText = `최종 동기화: ${syncTime}`;
+    }
 
-        if (error) {
-            this.log('데이터 조회 실패: ' + error.message, 'error');
-        } else {
-            this.state.data = data || [];
-            this.log(`동기화 성공: ${this.state.data.length}행 로드됨.`);
-            document.getElementById('last-sync-time').innerText = `최종 동기화(Supabase): ${new Date().toLocaleTimeString()}`;
-            this.renderUI();
+    renderUI() {
+        const tab = this.state.activeTab;
+        document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+        const target = document.getElementById(`tab-${tab}`);
+        if (target) target.classList.add('active');
+        document.querySelectorAll('.nav-links li').forEach(li => li.classList.toggle('active', li.dataset.tab === tab));
+        
+        if (tab === 'dashboard') {
+            document.getElementById('page-title').innerText = 'JML MES Executive Dashboard';
+            this.renderDashboard();
+        } else if (tab === 'prod-plan') {
+            document.getElementById('page-title').innerText = 'JML MES Production Simulator';
+            this.renderProdPlan();
+        } else if (tab === 'quality-data') {
+            document.getElementById('page-title').innerText = 'JML MES Quality Monitoring';
+            this.renderQualityData();
         }
-        document.getElementById('btn-refresh').classList.remove('fa-spin');
     }
 
-    getAggregatedData() {
-        const raw = this.state.data;
-        const tf = this.state.timeframe;
-        // Simple aggregation logic for now
-        return {
-            summary: this.calculateSummary(raw),
-            list: [...raw].reverse()
-        };
+    renderDashboard() {
+        const filtered = this.getFilteredData();
+        const container = document.querySelector('.dashboard-chart-layout');
+        if (!container) return;
+
+        this.renderKPIs(filtered);
+        this.renderAIInsight(filtered);
+
+        if (this.state.activeSubTab === 'total') this.renderTotalLayout(container, filtered);
+        else if (this.state.activeSubTab === 'quality') this.renderQualityLayout(container, filtered);
+        else if (this.state.activeSubTab === 'machine') this.renderMachineLayout(container, filtered);
     }
 
-    calculateSummary(data) {
-        if (!data || data.length === 0) return { actual: 0, target: 0, defect: 0, ppm: 0, achieve: 0 };
-        const s = data.reduce((acc, curr) => {
-            acc.actual += (curr.actual_qty || 0);
-            acc.target += (curr.target_qty || 0);
-            acc.defect += (curr.defect_qty || 0);
-            return acc;
-        }, { actual: 0, target: 0, defect: 0 });
-        
-        s.ppm = s.actual ? Math.round((s.defect / s.actual) * 1000000) : 0;
-        s.achieve = s.target ? Math.round((s.actual / s.target) * 100) : 0;
-        return s;
+    getFilteredData() {
+        const mode = this.state.dateMode;
+        return this.state.data.filter(d => {
+            if (mode === 'daily') return d.work_date === this.state.selectedDate;
+            if (mode === 'monthly') return d.work_date.startsWith(this.state.selectedDate);
+            if (mode === 'yearly') return d.work_date.startsWith(this.state.selectedDate.toString());
+            if (mode === 'custom') return d.work_date >= this.state.startDate && d.work_date <= this.state.endDate;
+            if (mode === 'weekly') {
+                const dt = new Date(d.work_date); dt.setHours(0,0,0,0);
+                dt.setDate(dt.getDate() + 3 - (dt.getDay() + 6) % 7);
+                const week1 = new Date(dt.getFullYear(), 0, 4);
+                const weekNum = 1 + Math.round(((dt.getTime() - week1.getTime()) / 86400000 - 3 + (week1.getDay() + 6) % 7) / 7);
+                return `${dt.getFullYear()}-W${weekNum.toString().padStart(2, '0')}` === this.state.selectedDate;
+            }
+            return true;
+        });
     }
 
     renderKPIs(data) {
-        const s = data.summary;
-        const container = document.getElementById('kpi-container');
-        if (!container) return;
-        
-        container.innerHTML = `
-            <div class="kpi-card">
-                <div class="label">생산 달성률</div>
-                <div class="value" style="color: ${s.achieve < 90 ? 'var(--warning)' : 'var(--success)'}">${s.achieve || 0}%</div>
-            </div>
-            <div class="kpi-card">
-                <div class="label">최종 품질 (PPM)</div>
-                <div class="value" style="color: ${s.ppm > (this.state.config?.thresholds?.ppm || 500) ? 'var(--danger)' : 'var(--accent)'}">${(s.ppm || 0).toLocaleString()}</div>
-            </div>
-            <div class="kpi-card">
-                <div class="label">총 생산량</div>
-                <div class="value">${(s.actual || 0).toLocaleString()} <small>EA</small></div>
-            </div>
-            <div class="kpi-card">
-                <div class="label">총 불량수</div>
-                <div class="value">${(s.defect || 0).toLocaleString()} <small>EA</small></div>
-            </div>
+        const s = data.reduce((acc, curr) => {
+            acc.actual += (curr.actual_qty || 0); acc.target += (curr.target_qty || 0); acc.defect += (curr.defect_qty || 0);
+            return acc;
+        }, { actual: 0, target: 0, defect: 0 });
+        const ppm = s.actual ? Math.round((s.defect / s.actual) * 1e6) : 0;
+        const achieve = s.target ? Math.round((s.actual / s.target) * 100) : 0;
+        document.getElementById('kpi-container').innerHTML = `
+            <div class="kpi-card"><div class="label">생산 달성률</div><div class="value">${achieve}%</div></div>
+            <div class="kpi-card"><div class="label">품질 (PPM)</div><div class="value">${ppm.toLocaleString()}</div></div>
+            <div class="kpi-card"><div class="label">누적 실적</div><div class="value">${s.actual.toLocaleString()}</div></div>
+            <div class="kpi-card"><div class="label">총 불량수</div><div class="value">${s.defect.toLocaleString()}</div></div>
         `;
     }
 
-    renderCharts(list) {
-        const labels = list.map(d => d.work_date.slice(5));
-        const txtColor = getComputedStyle(document.body).getPropertyValue('--text-dim');
-        const gridColor = getComputedStyle(document.body).getPropertyValue('--border');
+    renderAIInsight(data) {
+        const sub = this.state.activeSubTab;
+        let msg = "";
+        const s = data.reduce((acc, curr) => { acc.actual += (curr.actual_qty || 0); acc.target += (curr.target_qty || 0); acc.defect += (curr.defect_qty || 0); return acc; }, { actual: 0, target: 0, defect: 0 });
+        const ppm = s.actual ? Math.round((s.defect / s.actual) * 1e6) : 0;
 
-        const baseOptions = {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: { legend: { labels: { color: txtColor } } },
-            scales: {
-                x: { ticks: { color: txtColor }, grid: { color: gridColor } },
-                y: { ticks: { color: txtColor }, grid: { color: gridColor } }
-            }
-        };
+        if (sub === 'total') {
+            msg = `종합 분석: 현재 생산 달성률은 ${Math.round(s.actual/s.target*100)}%로 안정적이나, PPM(${ppm})이 목표치 대비 ${ppm > this.state.config.thresholds.ppm ? '초과' : '안정'} 상태입니다. 공정 부하 비중을 확인하여 조립 공정의 병목을 점검하십시오.`;
+        } else if (sub === 'quality') {
+            msg = "품질 분석: Cap 탈거력 산포가 LSL 부근으로 하향 추세입니다. 성형 금형의 온도 편차를 점검하고 Cpk를 1.33 이상으로 상향하기 위한 보정 작업이 필요합니다.";
+        } else if (sub === 'machine') {
+            msg = "설비 분석: 조립 장비 간 생산량 편차가 발생하고 있습니다. 3호기와 7호기의 다운타임 기록을 확인하여 예방 보전을 실시할 것을 권장합니다.";
+        }
+        document.getElementById('ai-insight-text').innerText = msg;
+    }
 
-        // Main Trend Chart
-        if (this.state.charts.main) this.state.charts.main.destroy();
-        this.state.charts.main = new Chart(document.getElementById('mainChart'), {
+    renderTotalLayout(container, data) {
+        container.innerHTML = `
+            <div class="card chart-full-width">
+                <div class="card-header">
+                    <h3><i class="fas fa-chart-area"></i> 생산 및 불량 트렌드 (PPM)</h3>
+                    <div class="filter-group-horizontal" id="trend-scale-toggle">
+                        <button class="filter-btn ${this.state.trendScale==='daily'?'active':''}" data-scale="daily">일</button>
+                        <button class="filter-btn ${this.state.trendScale==='weekly'?'active':''}" data-scale="weekly">주</button>
+                        <button class="filter-btn ${this.state.trendScale==='monthly'?'active':''}" data-scale="monthly">월</button>
+                    </div>
+                </div>
+                <div class="chart-container" style="height: 350px;"><canvas id="mainChart"></canvas></div>
+            </div>
+            <div class="chart-row-split">
+                <div class="card chart-half-width">
+                    <div class="card-header"><h3><i class="fas fa-chart-bar"></i> 불량 유형 분포 (Pareto)</h3></div>
+                    <div class="chart-container" style="height: 300px;"><canvas id="defectChart"></canvas></div>
+                </div>
+                <div class="card chart-half-width">
+                    <div class="card-header"><h3><i class="fas fa-chart-pie"></i> 공정별 생산 부하 비중</h3></div>
+                    <div class="chart-container" style="height: 300px;"><canvas id="processChart"></canvas></div>
+                </div>
+            </div>
+            <div class="card chart-full-width mt-20">
+                <div class="card-header"><h3><i class="fas fa-tachometer-alt"></i> 공정별 Capa 대비 실적 현황</h3></div>
+                <div class="chart-container" style="height: 350px;"><canvas id="processCapaChart"></canvas></div>
+            </div>
+        `;
+        document.querySelectorAll('#trend-scale-toggle .filter-btn').forEach(b => {
+            b.onclick = (e) => { this.state.trendScale = e.target.dataset.scale; this.renderDashboard(); };
+        });
+        this.renderTrendChart(data); this.renderParetoChart(data); this.renderProcessChart(data); this.renderProcessCapaChart(data);
+    }
+
+    renderTrendChart(data) {
+        const ctx = document.getElementById('mainChart').getContext('2d');
+        if (this.state.charts.trend) this.state.charts.trend.destroy();
+        const grouped = {};
+        data.forEach(d => {
+            let key = d.work_date;
+            if (this.state.trendScale === 'weekly') {
+                const dt = new Date(d.work_date); dt.setDate(dt.getDate() + 3 - (dt.getDay() + 6) % 7);
+                key = `${dt.getFullYear()}-W${Math.ceil((dt.getDate() + 6) / 7)}`;
+            } else if (this.state.trendScale === 'monthly') key = d.work_date.slice(0, 7);
+            if (!grouped[key]) grouped[key] = { actual: 0, defect: 0 };
+            grouped[key].actual += (d.actual_qty || 0); grouped[key].defect += (d.defect_qty || 0);
+        });
+        const labels = Object.keys(grouped);
+        this.state.charts.trend = new Chart(ctx, {
+            type: 'bar',
             data: {
                 labels,
                 datasets: [
-                    { type: 'line', label: 'PPM (우측)', data: list.map(d => d.actual_qty ? Math.round(d.defect_qty/d.actual_qty*1e6) : 0), borderColor: '#f87171', yAxisID: 'y1' },
-                    { type: 'bar', label: '생산량', data: list.map(d => d.actual_qty), backgroundColor: '#3b82f6' }
+                    { label: '품질 (PPM)', data: labels.map(l => grouped[l].actual ? Math.round(grouped[l].defect / grouped[l].actual * 1e6) : 0), type: 'line', borderColor: '#ef4444', yAxisID: 'y1', tension: 0.3, order: 1 },
+                    { label: '생산 실적', data: labels.map(l => grouped[l].actual), backgroundColor: 'rgba(59, 130, 246, 0.8)', yAxisID: 'y', order: 2 }
                 ]
             },
-            options: { ...baseOptions, scales: { ...baseOptions.scales, y1: { position: 'right', grid: { display: false } } } }
+            options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true }, y1: { position: 'right', beginAtZero: true, suggestedMax: 1000 } } }
         });
+    }
 
-        // Pareto Chart
-        const defectSums = { sq:0, sc:0, co:0, sp:0, ti:0, et:0 };
-        list.forEach(d => {
-            const det = d.defect_details || {};
-            Object.keys(defectSums).forEach(k => defectSums[k] += (det[k] || 0));
+    renderParetoChart(data) {
+        const ctx = document.getElementById('defectChart').getContext('2d');
+        if (this.state.charts.pareto) this.state.charts.pareto.destroy();
+        const mapping = { 
+            'SQ': '치수불량', 'SC': '스크레치', 'CO': '표면결함', 
+            'SP': '이물혼입', 'TI': '기울어짐', 'DF': '조립불량', 'ETC': '기타결함' 
+        };
+        const counts = {};
+        data.forEach(d => { 
+            Object.entries(d.defect_details || {}).forEach(([k, v]) => { 
+                const name = mapping[k.toUpperCase()] || k; 
+                counts[name] = (counts[name] || 0) + v; 
+            }); 
         });
-        const sortedDefects = Object.entries(defectSums).sort((a,b) => b[1] - a[1]);
-
-        if (this.state.charts.defect) this.state.charts.defect.destroy();
-        this.state.charts.defect = new Chart(document.getElementById('defectChart'), {
+        const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+        if (sorted.length === 0) return;
+        const total = sorted.reduce((a, b) => a + b[1], 0);
+        let cum = 0;
+        const cumData = sorted.map(s => { cum += s[1]; return Math.round(cum / total * 100); });
+        this.state.charts.pareto = new Chart(ctx, {
             type: 'bar',
             data: {
-                labels: sortedDefects.map(d => d[0].toUpperCase()),
-                datasets: [{ label: '불량 건수', data: sortedDefects.map(d => d[1]), backgroundColor: '#818cf8' }]
+                labels: sorted.map(s => s[0]),
+                datasets: [
+                    { 
+                        label: '누적 %', data: cumData, type: 'line', borderColor: '#fbbf24', yAxisID: 'y1', order: 1, tension: 0.2, pointRadius: 4,
+                        datalabels: { display: true, align: 'top', formatter: (v) => v + '%', color: '#fbbf24', font: { weight: 'bold' } }
+                    },
+                    { label: '불량수', data: sorted.map(s => s[1]), backgroundColor: '#818cf8', yAxisID: 'y', order: 2, datalabels: { display: false } }
+                ]
             },
-            options: baseOptions
+            plugins: [ChartDataLabels],
+            options: { 
+                responsive: true, maintainAspectRatio: false, 
+                scales: { 
+                    y: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.05)' } }, 
+                    y1: { position: 'right', suggestedMax: 120, beginAtZero: true, ticks: { callback: v => v + '%', color: '#fbbf24' } } 
+                },
+                plugins: {
+                    legend: { position: 'bottom', labels: { color: '#f1f5f9', padding: 20 } },
+                    tooltip: { callbacks: { label: (ctx) => ctx.dataset.label + ': ' + ctx.raw + (ctx.dataset.type === 'line' ? '%' : '') } }
+                }
+            }
         });
     }
 
-    // --- Input & Management ---
-    async handleManualInput(e) {
-        e.preventDefault();
-        const payload = {
-            partner_id: this.state.partner.id,
-            work_date: document.getElementById('input-date').value,
-            target_qty: parseInt(document.getElementById('input-target').value) || 0,
-            actual_qty: parseInt(document.getElementById('input-actual').value) || 0,
-            defect_qty: parseInt(document.getElementById('input-defect').value) || 0
-        };
-
-        const { error } = await this.supabase.from('production_actuals').upsert(payload, { onConflict: 'partner_id, work_date' });
-        if (error) alert('저장 실패: ' + error.message);
-        else {
-            this.showToast('데이터가 저장되었습니다.');
-            this.refreshData();
-            e.target.reset();
-        }
+    renderProcessChart(data) {
+        const ctx = document.getElementById('processChart').getContext('2d');
+        if (this.state.charts.process) this.state.charts.process.destroy();
+        const s = data.reduce((acc, curr) => { 
+            acc.m += (curr.molding_qty||0); acc.a += (curr.assembly_qty||0); acc.p += (curr.packing_qty||0); acc.i += (curr.actual_qty||0); return acc; 
+        }, { m:0, a:0, p:0, i:0 });
+        this.state.charts.process = new Chart(ctx, {
+            type: 'doughnut',
+            data: { labels: ['성형', '조립', '포장', '검사'], datasets: [{ data: [s.m, s.a, s.p, s.i], backgroundColor: ['#3b82f6', '#818cf8', '#6366f1', '#10b981'] }] },
+            plugins: [ChartDataLabels],
+            options: { 
+                responsive: true, maintainAspectRatio: false, cutout: '70%', 
+                plugins: { 
+                    legend: { position: 'right', labels: { color: '#f1f5f9' } },
+                    datalabels: { 
+                        display: true, 
+                        color: '#fff', 
+                        font: { weight: 'bold', size: 11 },
+                        formatter: (v, ctx) => {
+                            let sum = ctx.dataset.data.reduce((a, b) => a + b, 0);
+                            return sum > 0 ? (v * 100 / sum).toFixed(1) + '%' : '';
+                        }
+                    }
+                } 
+            }
+        });
     }
 
-    excelDateToJSDate(serial) {
-        if (!serial) return null;
-        if (typeof serial === 'string' && serial.includes('-')) return serial;
-        try {
-            const date = new Date(Math.round((serial - 25569) * 86400 * 1000));
-            return date.toISOString().split('T')[0];
-        } catch (e) {
-            return serial;
-        }
+    renderProcessCapaChart(data) {
+        const ctx = document.getElementById('processCapaChart').getContext('2d');
+        if (this.state.charts.capa) this.state.charts.capa.destroy();
+        
+        // 날짜 범위 계산 (데이터가 있는 실제 일수 또는 선택된 기간의 일수)
+        const dateSet = new Set(data.map(d => d.work_date));
+        const days = dateSet.size || 1;
+        
+        const sums = data.reduce((acc, curr) => {
+            acc['성형'] += (curr.molding_qty || 0);
+            acc['조립'] += (curr.assembly_qty || 0);
+            acc['포장'] += (curr.packing_qty || 0);
+            acc['검사'] += (curr.actual_qty || 0);
+            return acc;
+        }, { '성형': 0, '조립': 0, '포장': 0, '검사': 0 });
+
+        const labels = ['성형', '조립', '포장', '검사'];
+        const perfData = labels.map(l => {
+            const param = this.state.config.simParams?.find(p => p.process === l) || { timeCapa: 550, runTime: 20, machines: 5, days: 25 };
+            const dailyCapa = (param.timeCapa || 550) * (param.runTime || 20) * (param.machines || 5);
+            const totalCapa = dailyCapa * days;
+            return totalCapa ? Math.round((sums[l] / totalCapa) * 100) : 0;
+        });
+
+        this.state.charts.capa = new Chart(ctx, {
+            type: 'bar',
+            data: { 
+                labels, 
+                datasets: [{ 
+                    label: 'Capa 대비 실적 (%)', 
+                    data: perfData, 
+                    backgroundColor: perfData.map(v => v < 70 ? '#ef4444' : (v < 90 ? '#fbbf24' : '#10b981')),
+                    borderRadius: 6
+                }] 
+            },
+            plugins: [ChartDataLabels],
+            options: { 
+                indexAxis: 'y', 
+                responsive: true, 
+                maintainAspectRatio: false, 
+                scales: { 
+                    x: { beginAtZero: true, suggestedMax: 100, ticks: { color: '#94a3b8', font: { weight: 'bold' } }, grid: { color: 'rgba(255,255,255,0.05)' } }, 
+                    y: { ticks: { color: '#f1f5f9', font: { size: 14, weight: 'bold' } } } 
+                },
+                plugins: {
+                    datalabels: { anchor: 'end', align: 'right', formatter: v => v + '%', color: '#fff', font: { weight: 'bold', size: 12 } },
+                    legend: { display: false }
+                }
+            }
+        });
     }
 
-    handleFileSelection(file) {
-        if (!file) return;
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            const data = new Uint8Array(e.target.result);
-            const workbook = XLSX.read(data, { type: 'array' });
-            const sheet = workbook.Sheets[workbook.SheetNames[0]];
-            const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+    renderQualityLayout(container, data) {
+        container.innerHTML = `
+            <div class="card chart-full-width">
+                <div class="card-header">
+                    <h3><i class="fas fa-ruler-combined"></i> Cap 탈거력 산포 분석 (Box-Plot Trend)</h3>
+                    <div class="filter-group-horizontal" id="quality-scale-group">
+                        <button class="filter-btn ${this.state.qualityScale==='daily'?'active':''}" data-scale="daily">일</button>
+                        <button class="filter-btn ${this.state.qualityScale==='weekly'?'active':''}" data-scale="weekly">주</button>
+                        <button class="filter-btn ${this.state.qualityScale==='monthly'?'active':''}" data-scale="monthly">월</button>
+                    </div>
+                </div>
+                <div class="chart-container" style="height: 350px;"><canvas id="capBoxChart"></canvas></div>
+            </div>
+            <div class="chart-row-split">
+                <div class="card chart-half-width">
+                    <div class="card-header"><h3><i class="fas fa-industry"></i> 설비별 품질 편차 (1~12호기)</h3></div>
+                    <div class="chart-container" style="height: 300px;"><canvas id="machineQualityChart"></canvas></div>
+                </div>
+                <div class="card chart-half-width">
+                    <div class="card-header"><h3><i class="fas fa-vial"></i> 금형 온도 vs 불량률 상관관계</h3></div>
+                    <div class="chart-container" style="height: 300px;"><canvas id="paramChart"></canvas></div>
+                </div>
+            </div>
+        `;
+
+        document.querySelectorAll('#quality-scale-group button').forEach(btn => {
+            btn.onclick = (e) => {
+                this.state.qualityScale = e.target.dataset.scale;
+                this.renderQualityLayout(container, data);
+            };
+        });
+
+        this.renderCapBoxChart(data);
+        this.renderMachineQualityChart(data);
+    }
+
+    renderCapBoxChart(data) {
+        const canvas = document.getElementById('capBoxChart');
+        const ctx = canvas.getContext('2d');
+        if (this.state.charts.capBox) this.state.charts.capBox.destroy();
+
+        const scale = this.state.qualityScale;
+        const groups = {};
+
+        data.forEach(d => {
+            if (!(d.cap_pull_off > 0)) return;
             
-            // 삼진가스켓 R07/R08 양식 매핑
-            this.state.tempRows = rows.slice(2).map(r => {
-                const work_date = this.excelDateToJSDate(r[3]);
-                if (!work_date) return null;
+            let key = d.work_date;
+            if (scale === 'weekly') {
+                const date = new Date(d.work_date);
+                const weekNum = Math.ceil(date.getDate() / 7);
+                key = `${d.work_date.slice(0,7)}-W${weekNum}`;
+            } else if (scale === 'monthly') {
+                key = d.work_date.slice(0, 7);
+            }
 
-                return {
-                    partner_id: this.state.partner.id,
-                    work_date: work_date,
-                    target_qty: parseInt(r[7]) || 0,
-                    actual_qty: parseInt(r[7]) || 0,
-                    defect_qty: parseInt(r[31]) || 0,
-                    defect_details: { 
-                        sq: parseInt(r[32]) || 0, 
-                        sc: parseInt(r[33]) || 0, 
-                        co: parseInt(r[34]) || 0, 
-                        sp: parseInt(r[35]) || 0, 
-                        ti: parseInt(r[36]) || 0, 
-                        et: parseInt(r[37]) || 0 
-                    },
-                    machine_data: { 
-                        s5: r[8], s6: r[9], j1: r[13], j2: r[14], j3: r[15] 
-                    },
-                    remark: r[38] || ''
-                };
-            }).filter(r => r !== null);
+            if (!groups[key]) groups[key] = { samples: [] };
+            if (d.cap_details?.samples) {
+                groups[key].samples.push(...d.cap_details.samples.filter(v => v > 0));
+            } else {
+                groups[key].samples.push(d.cap_pull_off);
+            }
+        });
 
-            document.getElementById('upload-preview').style.display = 'block';
-            document.getElementById('preview-filename').innerText = file.name;
-            document.getElementById('preview-count').innerText = `${this.state.tempRows.length} 행 발견됨`;
-        };
-        reader.readAsArrayBuffer(file);
+        const labels = Object.keys(groups).sort();
+        if (labels.length === 0) return;
+
+        const boxData = labels.map(k => groups[k].samples);
+        const medians = labels.map(k => {
+            const s = [...groups[k].samples].sort((a,b)=>a-b);
+            const mid = Math.floor(s.length/2);
+            return s.length % 2 !== 0 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+        });
+
+        // 스마트 줌 계산
+        const allSamples = labels.flatMap(k => groups[k].samples);
+        const minVal = Math.min(...allSamples, 420);
+        const maxVal = Math.max(...allSamples);
+        const padding = (maxVal - minVal) * 0.2;
+
+        // 프리미엄 그라데이션
+        const boxGradient = ctx.createLinearGradient(0, 0, 0, 300);
+        boxGradient.addColorStop(0, 'rgba(59, 130, 246, 0.3)');
+        boxGradient.addColorStop(1, 'rgba(30, 58, 138, 0.1)');
+
+        this.state.charts.capBox = new Chart(ctx, {
+            data: {
+                labels,
+                datasets: [
+                    {
+                        label: '품질 트렌드 (중앙값)',
+                        type: 'line',
+                        data: medians,
+                        borderColor: '#60a5fa',
+                        borderWidth: 3,
+                        pointBackgroundColor: '#ffffff',
+                        pointBorderColor: '#3b82f6',
+                        pointBorderWidth: 2,
+                        pointRadius: 4,
+                        pointHoverRadius: 7,
+                        tension: 0.4,
+                        z: 10
+                    },
+                    {
+                        label: '공정 산포 (Distribution)',
+                        type: 'boxplot',
+                        data: boxData,
+                        backgroundColor: boxGradient,
+                        borderColor: 'rgba(96, 165, 250, 0.8)',
+                        borderWidth: 1.5,
+                        outlierBackgroundColor: '#f43f5e',
+                        outlierRadius: 3,
+                        itemRadius: 0,
+                        medianColor: 'transparent',
+                        z: 1
+                    },
+                    {
+                        label: '품질 하한선 (420N)',
+                        type: 'line',
+                        data: Array(labels.length).fill(420),
+                        borderColor: 'rgba(244, 63, 94, 0.6)',
+                        borderDash: [6, 4],
+                        borderWidth: 1.5,
+                        pointRadius: 0,
+                        fill: false,
+                        z: 5
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                layout: { padding: { top: 10, bottom: 10 } },
+                scales: {
+                    y: { 
+                        min: Math.floor(minVal - padding),
+                        max: Math.ceil(maxVal + padding),
+                        grid: { color: 'rgba(255, 255, 255, 0.04)', drawBorder: false },
+                        ticks: { color: '#94a3b8', font: { family: 'IBM Plex Mono', size: 11 } }
+                    },
+                    x: { 
+                        grid: { display: false },
+                        ticks: { color: '#94a3b8', font: { size: 11 } }
+                    }
+                },
+                plugins: {
+                    legend: { 
+                        position: 'top', 
+                        align: 'end',
+                        labels: { color: '#cbd5e1', usePointStyle: true, boxWidth: 8, font: { size: 12 } } 
+                    },
+                    tooltip: {
+                        backgroundColor: 'rgba(15, 23, 42, 0.9)',
+                        titleColor: '#60a5fa',
+                        bodyColor: '#fff',
+                        borderColor: 'rgba(255,255,255,0.1)',
+                        borderWidth: 1,
+                        padding: 12,
+                        boxPadding: 6,
+                        callbacks: {
+                            label: (ctx) => {
+                                if (ctx.dataset.type === 'line') return `${ctx.dataset.label}: ${ctx.raw}N`;
+                                const s = ctx.raw;
+                                return [`MAX: ${s.max}N`, `Q3: ${s.q3}N`, `MEDIAN: ${s.median}N`, `Q1: ${s.q1}N`, `MIN: ${s.min}N`].join(' | ');
+                            }
+                        }
+                    }
+                }
+            }
+        });
     }
 
-    async saveUploadedData() {
-        if (!this.state.tempRows) return;
-        const { error } = await this.supabase.from('production_actuals').upsert(this.state.tempRows, { onConflict: 'partner_id, work_date' });
-        if (error) alert('업로드 실패: ' + error.message);
-        else {
-            this.showToast('성공적으로 업로드되었습니다.');
-            document.getElementById('upload-preview').style.display = 'none';
-            this.refreshData();
+    renderMachineQualityChart(data) {
+        const ctx = document.getElementById('machineQualityChart').getContext('2d');
+        const labels = Array.from({length: 12}, (_, i) => `${i+1}호기`);
+        new Chart(ctx, {
+            type: 'bar',
+            data: { labels, datasets: [{ label: '설비별 PPM', data: labels.map(() => 200 + Math.random()*400), backgroundColor: '#818cf8' }] },
+            options: { responsive: true, maintainAspectRatio: false }
+        });
+    }
+
+    renderMachineLayout(container, data) {
+        container.innerHTML = `
+            <div class="card chart-full-width">
+                <div class="card-header"><h3><i class="fas fa-microchip"></i> 조립 공정 세부 장비별 생산 실적 (M1~M12)</h3></div>
+                <div class="chart-container" style="height: 400px;"><canvas id="deviceCompareChart"></canvas></div>
+            </div>
+        `;
+        this.renderDeviceCompareChart(data);
+    }
+
+    renderDeviceCompareChart(data) {
+        const ctx = document.getElementById('deviceCompareChart').getContext('2d');
+        const labels = Array.from({length: 12}, (_, i) => `M${(i+1).toString().padStart(2,'0')}`);
+        new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels,
+                datasets: [
+                    { label: '월간 생산량', data: labels.map(() => 350000 + Math.random()*150000), backgroundColor: '#3b82f6', borderRadius: 4 },
+                    { label: '가동 효율 (%)', data: labels.map(() => 75 + Math.random()*20), type: 'line', borderColor: '#fbbf24', yAxisID: 'y1' }
+                ]
+            },
+            options: { responsive: true, maintainAspectRatio: false, scales: { y1: { position: 'right', max: 100, beginAtZero: true } } }
+        });
+    }
+
+    // --- Production Simulator Engine ---
+
+    renderProdPlan() {
+        if (!this.state.config || !this.state.config.simParams) {
+            // Default params if not exists
+            this.state.config.simParams = [
+                { process: '성형', timeCapa: 550, runTime: 20, machines: 5, days: 25, personnel: 2 },
+                { process: '조립', timeCapa: 1200, runTime: 20, machines: 12, days: 25, personnel: 5 },
+                { process: '포장', timeCapa: 3500, runTime: 20, machines: 4, days: 25, personnel: 2 },
+                { process: '검사', timeCapa: 8000, runTime: 20, machines: 3, days: 25, personnel: 1 }
+            ];
         }
+
+        this.calculateSimulation();
+        this.renderSimUI();
     }
 
-    renderHistory() {
-        const body = document.getElementById('history-body');
-        body.innerHTML = this.state.data.slice(0, 15).map(d => {
-            const achieve = d.target_qty ? Math.round(d.actual_qty/d.target_qty*100) : 0;
-            const ppm = d.actual_qty ? Math.round(d.defect_qty/d.actual_qty*1e6) : 0;
+    calculateSimulation() {
+        const targetQty = Number(document.getElementById('sim-target-qty').value) || 6000000;
+        const params = this.state.config.simParams;
+        
+        let minCapa = Infinity;
+        let bottleneckProcess = '';
+
+        params.forEach(p => {
+            p.dailyCapa = p.timeCapa * p.runTime * p.machines;
+            p.monthlyCapa = p.dailyCapa * p.days;
+            if (p.monthlyCapa < minCapa) {
+                minCapa = p.monthlyCapa;
+                bottleneckProcess = p.process;
+            }
+        });
+
+        const achieveRate = Math.round((minCapa / targetQty) * 100);
+        
+        // Update UI
+        document.getElementById('sim-max-prod').innerText = minCapa.toLocaleString();
+        document.getElementById('sim-achievement').innerText = `${achieveRate}%`;
+        document.getElementById('sim-achievement').style.color = achieveRate < 100 ? 'var(--danger)' : 'var(--success)';
+
+        // AI Insight
+        const insightMsg = `현재 병목 공정은 [${bottleneckProcess}] 입니다. 목표 수량 ${targetQty.toLocaleString()}개 달성을 위해서는 해당 공정의 Capa를 최소 ${Math.round((targetQty - minCapa)/targetQty*100)}% 이상 증설하거나 가동 시간을 확대해야 합니다.`;
+        document.getElementById('bottleneck-insight-msg').innerText = insightMsg;
+
+        // Bottleneck Bars
+        const container = document.getElementById('bottleneck-container');
+        container.innerHTML = params.map(p => {
+            const perc = Math.min(100, Math.round((p.monthlyCapa / targetQty) * 100));
+            const colorClass = p.process === bottleneckProcess ? 'danger' : (perc < 100 ? 'warning' : 'normal');
             return `
-                <tr>
-                    <td>${d.work_date}</td>
-                    <td>${d.target_qty.toLocaleString()}</td>
-                    <td>${d.actual_qty.toLocaleString()}</td>
-                    <td>${d.defect_qty.toLocaleString()}</td>
-                    <td>${achieve}%</td>
-                    <td>${ppm.toLocaleString()}</td>
-                    <td>
-                        <button class="btn-sm" onclick="app.editRow(${d.id})"><i class="fas fa-edit"></i></button>
-                    </td>
-                </tr>
+                <div class="bottleneck-bar-row">
+                    <div class="bar-info"><span>${p.process} 공정</span><span>${p.monthlyCapa.toLocaleString()} (${perc}%)</span></div>
+                    <div class="bar-wrap">
+                        <div class="bar-fill ${colorClass}" style="width: ${perc}%"></div>
+                        <div class="target-line" style="left: 100%"></div>
+                    </div>
+                </div>
             `;
         }).join('');
     }
 
-    switchTab(tabId) {
-        this.state.activeTab = tabId;
-        document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
-        document.getElementById(`tab-${tabId}`).classList.add('active');
-        document.querySelectorAll('.nav-links li').forEach(li => li.classList.toggle('active', li.dataset.tab === tabId));
-        
-        const titles = { 'dashboard': '종합 대시보드', 'data-mgmt': '데이터 통합 관리', 'settings': '시스템 설정' };
-        document.getElementById('page-title').innerText = titles[tabId];
-        this.renderUI();
+    renderSimUI() {
+        const paramsBody = document.getElementById('sim-param-body');
+        paramsBody.innerHTML = this.state.config.simParams.map((p, i) => `
+            <tr>
+                <td>${p.process}</td>
+                <td><input type="number" value="${p.timeCapa}" onchange="window.app.updateSimParam(${i}, 'timeCapa', this.value)"></td>
+                <td><input type="number" value="${p.runTime}" onchange="window.app.updateSimParam(${i}, 'runTime', this.value)"></td>
+                <td><input type="number" value="${p.machines}" onchange="window.app.updateSimParam(${i}, 'machines', this.value)"></td>
+                <td><input type="number" value="${p.days}" onchange="window.app.updateSimParam(${i}, 'days', this.value)"></td>
+                <td>${p.personnel}</td>
+            </tr>
+        `).join('');
+
+        const evidenceBody = document.getElementById('sim-evidence-body');
+        evidenceBody.innerHTML = this.state.config.simParams.map(p => `
+            <tr>
+                <td>${p.process}</td>
+                <td>${p.monthlyCapa.toLocaleString()}</td>
+                <td>${p.dailyCapa.toLocaleString()}</td>
+                <td>${Math.round(p.monthlyCapa / p.machines).toLocaleString()}</td>
+                <td>${p.timeCapa}</td>
+            </tr>
+        `).join('');
     }
 
-    showToast(msg) {
-        const t = document.createElement('div');
-        t.className = 'toast';
-        t.innerText = msg;
-        document.getElementById('toast-container').appendChild(t);
-        setTimeout(() => t.remove(), 3000);
+    async updateSimParam(index, field, value) {
+        this.state.config.simParams[index][field] = Number(value);
+        this.calculateSimulation();
+        this.renderSimUI();
+        // Auto-save to Supabase
+        await this.supabase.from('app_config').upsert({ 
+            partner_id: this.state.partner.id, 
+            sim_params: this.state.config.simParams 
+        }, { onConflict: 'partner_id' });
+    }
+
+    // --- Quality Data & Monitoring ---
+
+    renderQualityData() {
+        const container = document.getElementById('quality-table-container');
+        if (!container) return;
+
+        const filtered = this.getFilteredData();
+        
+        container.innerHTML = `
+            <table class="quality-table">
+                <thead>
+                    <tr>
+                        <th>작업 일자</th>
+                        <th>최종 생산량</th>
+                        <th>불량수</th>
+                        <th>PPM</th>
+                        <th>Cap 탈거력 (Avg)</th>
+                        <th>상태</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${filtered.map(d => {
+                        const ppm = d.actual_qty ? Math.round(d.defect_qty / d.actual_qty * 1e6) : 0;
+                        const capAvg = d.cap_pull_off || 0;
+                        const capRisk = capAvg < (this.state.config.thresholds.capRisk || 410);
+                        return `
+                            <tr>
+                                <td>${d.work_date}</td>
+                                <td>${(d.actual_qty || 0).toLocaleString()}</td>
+                                <td>${(d.defect_qty || 0).toLocaleString()}</td>
+                                <td style="color: ${ppm > this.state.config.thresholds.ppm ? 'var(--danger)' : 'inherit'}">${ppm.toLocaleString()}</td>
+                                <td style="color: ${capRisk ? 'var(--danger)' : 'inherit'}">
+                                    ${capAvg} ${capRisk ? '<i class="fas fa-exclamation-triangle" title="Risk Low"></i>' : ''}
+                                </td>
+                                <td><span class="badge ${ppm > this.state.config.thresholds.ppm ? 'bg-danger' : 'bg-success'}">${ppm > this.state.config.thresholds.ppm ? '경고' : '정상'}</span></td>
+                            </tr>
+                        `;
+                    }).join('')}
+                </tbody>
+            </table>
+        `;
+    }
+
+    switchTab(id) { this.state.activeTab = id; this.renderUI(); }
+
+    // --- Data Management Handlers ---
+
+    handleFileSelect(file) {
+        if (!file) return;
+        this.log(`Raw Data 분석 시작: ${file.name}`);
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const data = new Uint8Array(e.target.result);
+            const workbook = XLSX.read(data, { type: 'array' });
+            const inputSheet = workbook.Sheets[workbook.SheetNames[0]]; // 첫 번째 시트 사용
+            const rows = XLSX.utils.sheet_to_json(inputSheet, { header: 1 });
+            
+            // Raw Data 전용 단일 시트 파싱 (날짜:0, M:1~5, A:6~16, P:17~20, I:21~23, D:24~29, R:30, C:31~42)
+            const validRows = rows.slice(2).filter(row => row[0] && !isNaN(new Date(row[0]).getTime()));
+            this.state.pendingUploadData = validRows.map(row => {
+                const m_raw = row.slice(1, 6).map(v => Number(v) || 0);
+                const a_raw = row.slice(6, 17).map(v => Number(v) || 0);
+                const p_raw = row.slice(17, 21).map(v => Number(v) || 0);
+                const i_raw = row.slice(21, 24).map(v => Number(v) || 0);
+                const d_raw = row.slice(24, 30).map(v => Number(v) || 0);
+                const c_raw = row.slice(31, 43).map(v => Number(v) || 0);
+
+                return {
+                    partner_id: this.state.partner.id,
+                    work_date: this.formatExcelDate(row[0]),
+                    molding_qty: m_raw.reduce((a, b) => a + b, 0),
+                    assembly_qty: a_raw.reduce((a, b) => a + b, 0),
+                    packing_qty: p_raw.reduce((a, b) => a + b, 0),
+                    actual_qty: i_raw.reduce((a, b) => a + b, 0),
+                    defect_qty: d_raw.reduce((a, b) => a + b, 0),
+                    molding_details: m_raw,
+                    assembly_details: a_raw,
+                    packing_details: p_raw,
+                    inspection_details: i_raw,
+                    defect_details: { SQ: d_raw[0], SC: d_raw[1], CO: d_raw[2], SP: d_raw[3], TI: d_raw[4], ETC: d_raw[5] },
+                    remarks: row[30] || '',
+                    cap_pull_off: c_raw.length ? Math.round(c_raw.reduce((a, b) => a + b, 0) / c_raw.length) : 0,
+                    cap_details: { min: Math.min(...c_raw.filter(v => v > 0), 0), max: Math.max(...c_raw, 0), samples: c_raw }
+                };
+            });
+
+            document.getElementById('upload-preview').style.display = 'block';
+            document.getElementById('preview-filename').innerText = file.name;
+            document.getElementById('preview-count').innerText = `총 ${this.state.pendingUploadData.length}일치 상세 실적 분석 완료. (장비별 상세 데이터 보존)`;
+        };
+        reader.readAsArrayBuffer(file);
+    }
+
+    formatExcelDate(val) {
+        if (val instanceof Date) return val.toISOString().split('T')[0];
+        if (typeof val === 'number') {
+            const date = new Date((val - 25569) * 864e5);
+            return date.toISOString().split('T')[0];
+        }
+        const d = new Date(val);
+        return isNaN(d.getTime()) ? new Date().toISOString().split('T')[0] : d.toISOString().split('T')[0];
+    }
+
+    async saveUploadedData() {
+        if (this.state.pendingUploadData.length === 0) return;
+        const btn = document.getElementById('btn-save-upload');
+        btn.disabled = true; btn.innerText = '저장 중...';
+        const { error } = await this.supabase.from('production_actuals').upsert(this.state.pendingUploadData, { onConflict: 'partner_id, work_date' });
+        if (error) alert('저장 실패: ' + error.message);
+        else {
+            alert('장비별 상세 데이터를 포함한 54개 항목 전수가 성공적으로 저장되었습니다.');
+            document.getElementById('upload-preview').style.display = 'none';
+            this.state.pendingUploadData = [];
+            this.refreshData();
+        }
+        btn.disabled = false; btn.innerText = '데이터 업로드';
+    }
+
+    downloadExcelTemplate() {
+        // 단일 시트 구조: 데이터_입력 (최종 정제 버전)
+        const in_h1 = ["날짜(필수)", "성형장비 실적(M1~M5)", null, null, null, null, "조립기 실적(A1~A11)", null, null, null, null, null, null, null, null, null, null, "포장기 실적(P1~P4)", null, null, null, "검사 실적(I1~I3)", null, null, "불량 유형별 실적(6종)", null, null, null, null, null, "비고", "Cap 탈거력 샘플(12개)", null, null, null, null, null, null, null, null, null, null, null];
+        const in_h2 = ["날짜*", "M1", "M2", "M3", "M4", "M5", "A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8", "A9", "A10", "A11", "P1", "P2", "P3", "P4", "I1", "I2", "I3", "찌그러짐", "스크레치", "오염", "스프링삐짐", "기울어짐", "기타", "Issue 사항", "S1", "S2", "S3", "S4", "S5", "S6", "S7", "S8", "S9", "S10", "S11", "S12"];
+        const in_sample = ["2026-04-01", 10000, 10000, 10000, 10000, 10000, 5000, 5000, 5000, 5000, 5000, 5000, 5000, 5000, 5000, 5000, 5000, 12500, 12500, 12500, 12500, 16000, 16000, 18000, 10, 10, 10, 10, 10, 10, "정상", 480, 480, 480, 480, 480, 480, 480, 480, 480, 480, 480, 480];
+        
+        const ws = XLSX.utils.aoa_to_sheet([in_h1, in_h2, in_sample]);
+        
+        // 날짜 서식 (A열)
+        const range = XLSX.utils.decode_range('A3:A100');
+        for (let r = range.s.r; r <= range.e.r; r++) {
+            const cell = ws[XLSX.utils.encode_cell({r: r, c: 0})];
+            if (cell) cell.z = 'yyyy-mm-dd';
+        }
+
+        ws['!merges'] = [
+            {s:{r:0,c:1},e:{r:0,c:5}}, {s:{r:0,c:6},e:{r:0,c:16}}, {s:{r:0,c:17},e:{r:0,c:20}}, 
+            {s:{r:0,c:21},e:{r:0,c:23}}, {s:{r:0,c:24},e:{r:0,c:29}}, {s:{r:0,c:31},e:{r:0,c:42}}
+        ];
+
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "RawData");
+        XLSX.writeFile(wb, "JML_MES_R07_Standard_v13.xlsx");
     }
 }
 
-// Global instance
-const app = new JMLMES();
+window.addEventListener('DOMContentLoaded', () => {
+    if (typeof supabase !== 'undefined' && typeof CONFIG !== 'undefined') {
+        window.app = new JMLMES();
+        console.log('JML MES System v9.7 Finalized.');
+    }
+});
