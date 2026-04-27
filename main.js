@@ -22,11 +22,9 @@ class JMLMES {
             activeTab: 'dashboard', activeSubTab: 'total',
             dateMode: 'monthly', selectedDate: new Date().toISOString().split('T')[0].slice(0, 7),
             startDate: null, endDate: null,
-            trendScale: 'daily',
-            charts: {},
-            pendingUploadData: [],
-            qualityScale: 'daily',
-            machineQualityProcess: '조립'
+            qualityScale: 'monthly',
+            machineQualityProcess: '조립',
+            period: 'monthly'
         };
         this.init();
     }
@@ -53,6 +51,18 @@ class JMLMES {
 
         document.querySelectorAll('.nav-links li').forEach(li => {
             li.onclick = () => this.switchTab(li.getAttribute('data-tab'));
+        });
+
+        document.querySelectorAll('#global-period-filter .filter-btn').forEach(btn => {
+            btn.onclick = (e) => {
+                document.querySelectorAll('#global-period-filter .filter-btn').forEach(b => b.classList.remove('active'));
+                e.target.classList.add('active');
+                const period = e.target.dataset.period;
+                this.state.period = period;
+                this.state.trendScale = period === 'yearly' ? 'yearly' : (period === 'monthly' ? 'monthly' : (period === 'weekly' ? 'weekly' : 'daily'));
+                this.state.qualityScale = this.state.trendScale;
+                this.renderDashboard();
+            };
         });
 
         document.querySelectorAll('#dashboard-sub-tabs .sub-tab').forEach(btn => {
@@ -314,6 +324,7 @@ class JMLMES {
                         <button class="filter-btn ${this.state.trendScale==='daily'?'active':''}" data-scale="daily">일</button>
                         <button class="filter-btn ${this.state.trendScale==='weekly'?'active':''}" data-scale="weekly">주</button>
                         <button class="filter-btn ${this.state.trendScale==='monthly'?'active':''}" data-scale="monthly">월</button>
+                        <button class="filter-btn ${this.state.trendScale==='yearly'?'active':''}" data-scale="yearly">년</button>
                     </div>
                 </div>
                 <div class="chart-container" style="height: 350px;"><canvas id="mainChart"></canvas></div>
@@ -346,11 +357,17 @@ class JMLMES {
         data.forEach(d => {
             let key = d.work_date;
             if (this.state.trendScale === 'weekly') {
-                const dt = new Date(d.work_date); dt.setDate(dt.getDate() + 3 - (dt.getDay() + 6) % 7);
-                key = `${dt.getFullYear()}-W${Math.ceil((dt.getDate() + 6) / 7)}`;
-            } else if (this.state.trendScale === 'monthly') key = d.work_date.slice(0, 7);
+                const date = new Date(d.work_date);
+                const first = date.getDate() - date.getDay();
+                key = new Date(date.setDate(first)).toISOString().split('T')[0];
+            } else if (this.state.trendScale === 'monthly') {
+                key = d.work_date.substring(0, 7);
+            } else if (this.state.trendScale === 'yearly') {
+                key = d.work_date.substring(0, 4);
+            }
             if (!grouped[key]) grouped[key] = { actual: 0, defect: 0 };
-            grouped[key].actual += (d.actual_qty || 0); grouped[key].defect += (d.defect_qty || 0);
+            grouped[key].actual += (d.actual_qty || 0);
+            grouped[key].defect += (d.defect_qty || 0);
         });
         const labels = Object.keys(grouped);
         this.state.charts.trend = new Chart(ctx, {
@@ -470,6 +487,7 @@ class JMLMES {
                         <button class="filter-btn ${this.state.qualityScale==='daily'?'active':''}" data-scale="daily">일</button>
                         <button class="filter-btn ${this.state.qualityScale==='weekly'?'active':''}" data-scale="weekly">주</button>
                         <button class="filter-btn ${this.state.qualityScale==='monthly'?'active':''}" data-scale="monthly">월</button>
+                        <button class="filter-btn ${this.state.qualityScale==='yearly'?'active':''}" data-scale="yearly">년</button>
                     </div>
                 </div>
                 <div class="chart-container" style="height: 350px;"><canvas id="capBoxChart"></canvas></div>
@@ -538,10 +556,12 @@ class JMLMES {
             let key = d.work_date;
             if (scale === 'weekly') {
                 const date = new Date(d.work_date);
-                const weekNum = Math.ceil(date.getDate() / 7);
-                key = `${d.work_date.slice(0,7)}-W${weekNum}`;
+                const first = date.getDate() - date.getDay();
+                key = new Date(date.setDate(first)).toISOString().split('T')[0] + ' 주';
             } else if (scale === 'monthly') {
-                key = d.work_date.slice(0, 7);
+                key = d.work_date.substring(0, 7) + ' 월';
+            } else if (scale === 'yearly') {
+                key = d.work_date.substring(0, 4) + ' 년';
             }
 
             if (!groups[key]) groups[key] = { samples: [] };
