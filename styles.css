@@ -479,7 +479,29 @@ input:focus {
     border-radius: var(--radius);
     border: 1px solid var(--border);
     box-shadow: var(--shadow);
+    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    overflow: hidden;
 }
+
+.kpi-card.danger {
+    background: linear-gradient(135deg, rgba(239, 68, 68, 0.25) 0%, rgba(30, 41, 59, 0.8) 100%) !important;
+    border: 2px solid var(--danger) !important;
+    box-shadow: 0 0 20px rgba(239, 68, 68, 0.3) !important;
+}
+
+.kpi-card.warning {
+    background: linear-gradient(135deg, rgba(245, 158, 11, 0.2) 0%, rgba(30, 41, 59, 0.8) 100%) !important;
+    border: 2px solid var(--warning) !important;
+    box-shadow: 0 0 20px rgba(245, 158, 11, 0.2) !important;
+}
+
+.kpi-card.success {
+    border-bottom: 3px solid var(--success);
+}
+
+.kpi-card.danger .value { color: #ff8080 !important; text-shadow: 0 0 10px rgba(239, 68, 68, 0.5); }
+.kpi-card.warning .value { color: #fcd34d !important; }
 
 .kpi-card .label { color: var(--text-dim); font-size: 0.85rem; font-weight: 600; }
 .kpi-card .value { font-size: 1.8rem; font-weight: 700; margin: 8px 0; font-family: 'IBM Plex Mono'; }
