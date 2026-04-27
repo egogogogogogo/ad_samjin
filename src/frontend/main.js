@@ -312,7 +312,9 @@ class JMLMES {
         } else if (sub === 'machine') {
             msg = `설비 분석: 장비별 가동률 분석 결과, 조립 3호기와 7호기의 비가동(Downtime) 시간이 평균 대비 15% 높게 나타납니다. 부품 마모 상태를 즉시 점검하십시오.`;
         }
-        document.getElementById('ai-insight-text').innerText = msg;
+        try {
+            document.getElementById('ai-insight-text').innerText = msg || "데이터 분석 중입니다...";
+        } catch (e) { console.error("AI Insight Render Error:", e); }
     }
 
     renderTotalLayout(container, data) {
@@ -346,7 +348,16 @@ class JMLMES {
         document.querySelectorAll('#trend-scale-toggle .filter-btn').forEach(b => {
             b.onclick = (e) => { this.state.trendScale = e.target.dataset.scale; this.renderDashboard(); };
         });
-        this.renderTrendChart(data); this.renderParetoChart(data); this.renderProcessChart(data); this.renderProcessCapaChart(data);
+        
+        // 차트 렌더링 안정성을 위한 지연 처리
+        setTimeout(() => {
+            try {
+                this.renderTrendChart(data); 
+                this.renderParetoChart(data); 
+                this.renderProcessChart(data); 
+                this.renderProcessCapaChart(data);
+            } catch (e) { console.error("Chart Render Error:", e); }
+        }, 100);
     }
 
     renderTrendChart(data) {
