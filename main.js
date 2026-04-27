@@ -22,9 +22,11 @@ class JMLMES {
             activeTab: 'dashboard', activeSubTab: 'total',
             dateMode: 'monthly', selectedDate: new Date().toISOString().split('T')[0].slice(0, 7),
             startDate: null, endDate: null,
-            qualityScale: 'monthly',
-            machineQualityProcess: '조립',
-            period: 'monthly'
+            trendScale: 'daily',
+            charts: {},
+            pendingUploadData: [],
+            qualityScale: 'daily',
+            machineQualityProcess: '조립'
         };
         this.init();
     }
@@ -51,18 +53,6 @@ class JMLMES {
 
         document.querySelectorAll('.nav-links li').forEach(li => {
             li.onclick = () => this.switchTab(li.getAttribute('data-tab'));
-        });
-
-        document.querySelectorAll('#global-period-filter .filter-btn').forEach(btn => {
-            btn.onclick = (e) => {
-                document.querySelectorAll('#global-period-filter .filter-btn').forEach(b => b.classList.remove('active'));
-                e.target.classList.add('active');
-                const period = e.target.dataset.period;
-                this.state.period = period;
-                this.state.trendScale = period === 'yearly' ? 'yearly' : (period === 'monthly' ? 'monthly' : (period === 'weekly' ? 'weekly' : 'daily'));
-                this.state.qualityScale = this.state.trendScale;
-                this.renderDashboard();
-            };
         });
 
         document.querySelectorAll('#dashboard-sub-tabs .sub-tab').forEach(btn => {
@@ -324,7 +314,6 @@ class JMLMES {
                         <button class="filter-btn ${this.state.trendScale==='daily'?'active':''}" data-scale="daily">일</button>
                         <button class="filter-btn ${this.state.trendScale==='weekly'?'active':''}" data-scale="weekly">주</button>
                         <button class="filter-btn ${this.state.trendScale==='monthly'?'active':''}" data-scale="monthly">월</button>
-                        <button class="filter-btn ${this.state.trendScale==='yearly'?'active':''}" data-scale="yearly">년</button>
                     </div>
                 </div>
                 <div class="chart-container" style="height: 350px;"><canvas id="mainChart"></canvas></div>
@@ -347,10 +336,7 @@ class JMLMES {
         document.querySelectorAll('#trend-scale-toggle .filter-btn').forEach(b => {
             b.onclick = (e) => { this.state.trendScale = e.target.dataset.scale; this.renderDashboard(); };
         });
-        this.renderTrendChart(data);
-        this.renderParetoChart(data);
-        this.renderProcessChart(data);
-        setTimeout(() => this.renderAchievementTrendChart(data), 50); // DOM 안정화 후 렌더링
+        this.renderTrendChart(data); this.renderParetoChart(data); this.renderProcessChart(data); this.renderAchievementTrendChart(data);
     }
 
     renderTrendChart(data) {
@@ -360,17 +346,11 @@ class JMLMES {
         data.forEach(d => {
             let key = d.work_date;
             if (this.state.trendScale === 'weekly') {
-                const date = new Date(d.work_date);
-                const first = date.getDate() - date.getDay();
-                key = new Date(date.setDate(first)).toISOString().split('T')[0];
-            } else if (this.state.trendScale === 'monthly') {
-                key = d.work_date.substring(0, 7);
-            } else if (this.state.trendScale === 'yearly') {
-                key = d.work_date.substring(0, 4);
-            }
+                const dt = new Date(d.work_date); dt.setDate(dt.getDate() + 3 - (dt.getDay() + 6) % 7);
+                key = `${dt.getFullYear()}-W${Math.ceil((dt.getDate() + 6) / 7)}`;
+            } else if (this.state.trendScale === 'monthly') key = d.work_date.slice(0, 7);
             if (!grouped[key]) grouped[key] = { actual: 0, defect: 0 };
-            grouped[key].actual += (d.actual_qty || 0);
-            grouped[key].defect += (d.defect_qty || 0);
+            grouped[key].actual += (d.actual_qty || 0); grouped[key].defect += (d.defect_qty || 0);
         });
         const labels = Object.keys(grouped);
         this.state.charts.trend = new Chart(ctx, {
@@ -461,37 +441,23 @@ class JMLMES {
     }
 
     renderAchievementTrendChart(data) {
-        const canvas = document.getElementById('achievementTrendChart');
-        if (!canvas) return;
-        const ctx = canvas.getContext('2d');
+        const ctx = document.getElementById('achievementTrendChart').getContext('2d');
         if (this.state.charts.achieveTrend) this.state.charts.achieveTrend.destroy();
         
-        // 실제 데이터 기반 누적 계산
-        const sorted = [...data].sort((a,b) => new Date(a.work_date) - new Date(b.work_date));
-        const labels = sorted.map(d => d.work_date.slice(5));
-        let runningActual = 0;
-        let runningPlan = 0;
-        const actualData = sorted.map(d => { runningActual += (d.actual_qty||0); return runningActual; });
-        const planData = sorted.map(d => { runningPlan += (d.target_qty||0); return runningPlan; });
+        const labels = Array.from({length: 10}, (_, i) => `D-${10-i}`);
+        const plan = labels.map((_, i) => 100000 * (i + 1));
+        const actual = labels.map((_, i) => 90000 * (i + 1) + Math.random() * 20000);
 
         this.state.charts.achieveTrend = new Chart(ctx, {
             type: 'line',
             data: {
                 labels,
                 datasets: [
-                    { label: '누적 계획', data: planData, borderColor: 'rgba(255,255,255,0.3)', borderDash: [5,5], fill: false, pointRadius: 0 },
-                    { label: '누적 실적', data: actualData, borderColor: '#3b82f6', backgroundColor: 'rgba(59, 130, 246, 0.2)', fill: true, tension: 0.3 }
+                    { label: '계획 실적 (누적)', data: plan, borderColor: 'rgba(255,255,255,0.2)', borderDash: [5,5], fill: false },
+                    { label: '현재 실적 (누적)', data: actual, borderColor: '#3b82f6', backgroundColor: 'rgba(59, 130, 246, 0.1)', fill: true, tension: 0.3 }
                 ]
             },
-            options: { 
-                responsive: true, 
-                maintainAspectRatio: false, 
-                plugins: { legend: { display: true, labels: { color: '#94a3b8' } } },
-                scales: { 
-                    y: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#94a3b8' } },
-                    x: { grid: { display: false }, ticks: { color: '#94a3b8' } }
-                } 
-            }
+            options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.05)' } } } }
         });
     }
 
@@ -504,7 +470,6 @@ class JMLMES {
                         <button class="filter-btn ${this.state.qualityScale==='daily'?'active':''}" data-scale="daily">일</button>
                         <button class="filter-btn ${this.state.qualityScale==='weekly'?'active':''}" data-scale="weekly">주</button>
                         <button class="filter-btn ${this.state.qualityScale==='monthly'?'active':''}" data-scale="monthly">월</button>
-                        <button class="filter-btn ${this.state.qualityScale==='yearly'?'active':''}" data-scale="yearly">년</button>
                     </div>
                 </div>
                 <div class="chart-container" style="height: 350px;"><canvas id="capBoxChart"></canvas></div>
@@ -573,12 +538,10 @@ class JMLMES {
             let key = d.work_date;
             if (scale === 'weekly') {
                 const date = new Date(d.work_date);
-                const first = date.getDate() - date.getDay();
-                key = new Date(date.setDate(first)).toISOString().split('T')[0] + ' 주';
+                const weekNum = Math.ceil(date.getDate() / 7);
+                key = `${d.work_date.slice(0,7)}-W${weekNum}`;
             } else if (scale === 'monthly') {
-                key = d.work_date.substring(0, 7) + ' 월';
-            } else if (scale === 'yearly') {
-                key = d.work_date.substring(0, 4) + ' 년';
+                key = d.work_date.slice(0, 7);
             }
 
             if (!groups[key]) groups[key] = { samples: [] };
