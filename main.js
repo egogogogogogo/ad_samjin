@@ -276,14 +276,9 @@ class JMLMES {
         }, { actual: 0, target: 0, defect: 0 });
         const ppm = s.actual ? Math.round((s.defect / s.actual) * 1e6) : 0;
         const achieve = s.target ? Math.round((s.actual / s.target) * 100) : 0;
-        
-        const thresholds = this.state.config?.thresholds || { ppm: 500, monthlyTarget: 4500000 };
-        const ppmStatus = ppm > thresholds.ppm ? 'danger' : (ppm > thresholds.ppm * 0.8 ? 'warning' : 'success');
-        const achieveStatus = achieve < 90 ? 'danger' : (achieve < 100 ? 'warning' : 'success');
-
         document.getElementById('kpi-container').innerHTML = `
-            <div class="kpi-card ${achieveStatus}"><div class="label">생산 달성률</div><div class="value">${achieve}%</div></div>
-            <div class="kpi-card ${ppmStatus}"><div class="label">품질 (PPM)</div><div class="value">${ppm.toLocaleString()}</div></div>
+            <div class="kpi-card"><div class="label">생산 달성률</div><div class="value">${achieve}%</div></div>
+            <div class="kpi-card"><div class="label">품질 (PPM)</div><div class="value">${ppm.toLocaleString()}</div></div>
             <div class="kpi-card"><div class="label">누적 실적</div><div class="value">${s.actual.toLocaleString()}</div></div>
             <div class="kpi-card"><div class="label">총 불량수</div><div class="value">${s.defect.toLocaleString()}</div></div>
         `;
@@ -329,14 +324,14 @@ class JMLMES {
                 </div>
             </div>
             <div class="card chart-full-width mt-20">
-                <div class="card-header"><h3><i class="fas fa-tasks"></i> 누적 실적 목표 달성률 (Plan vs Actual Gap)</h3></div>
-                <div class="chart-container" style="height: 350px;"><canvas id="achievementTrendChart"></canvas></div>
+                <div class="card-header"><h3><i class="fas fa-tachometer-alt"></i> 공정별 Capa 대비 실적 현황</h3></div>
+                <div class="chart-container" style="height: 350px;"><canvas id="processCapaChart"></canvas></div>
             </div>
         `;
         document.querySelectorAll('#trend-scale-toggle .filter-btn').forEach(b => {
             b.onclick = (e) => { this.state.trendScale = e.target.dataset.scale; this.renderDashboard(); };
         });
-        this.renderTrendChart(data); this.renderParetoChart(data); this.renderProcessChart(data); this.renderAchievementTrendChart(data);
+        this.renderTrendChart(data); this.renderParetoChart(data); this.renderProcessChart(data); this.renderProcessCapaChart(data);
     }
 
     renderTrendChart(data) {
@@ -440,24 +435,55 @@ class JMLMES {
         });
     }
 
-    renderAchievementTrendChart(data) {
-        const ctx = document.getElementById('achievementTrendChart').getContext('2d');
-        if (this.state.charts.achieveTrend) this.state.charts.achieveTrend.destroy();
+    renderProcessCapaChart(data) {
+        const ctx = document.getElementById('processCapaChart').getContext('2d');
+        if (this.state.charts.capa) this.state.charts.capa.destroy();
         
-        const labels = Array.from({length: 10}, (_, i) => `D-${10-i}`);
-        const plan = labels.map((_, i) => 100000 * (i + 1));
-        const actual = labels.map((_, i) => 90000 * (i + 1) + Math.random() * 20000);
+        // 날짜 범위 계산 (데이터가 있는 실제 일수 또는 선택된 기간의 일수)
+        const dateSet = new Set(data.map(d => d.work_date));
+        const days = dateSet.size || 1;
+        
+        const sums = data.reduce((acc, curr) => {
+            acc['성형'] += (curr.molding_qty || 0);
+            acc['조립'] += (curr.assembly_qty || 0);
+            acc['포장'] += (curr.packing_qty || 0);
+            acc['검사'] += (curr.actual_qty || 0);
+            return acc;
+        }, { '성형': 0, '조립': 0, '포장': 0, '검사': 0 });
 
-        this.state.charts.achieveTrend = new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels,
-                datasets: [
-                    { label: '계획 실적 (누적)', data: plan, borderColor: 'rgba(255,255,255,0.2)', borderDash: [5,5], fill: false },
-                    { label: '현재 실적 (누적)', data: actual, borderColor: '#3b82f6', backgroundColor: 'rgba(59, 130, 246, 0.1)', fill: true, tension: 0.3 }
-                ]
+        const labels = ['성형', '조립', '포장', '검사'];
+        const perfData = labels.map(l => {
+            const param = this.state.config.simParams?.find(p => p.process === l) || { timeCapa: 550, runTime: 20, machines: 5, days: 25 };
+            const dailyCapa = (param.timeCapa || 550) * (param.runTime || 20) * (param.machines || 5);
+            const totalCapa = dailyCapa * days;
+            return totalCapa ? Math.round((sums[l] / totalCapa) * 100) : 0;
+        });
+
+        this.state.charts.capa = new Chart(ctx, {
+            type: 'bar',
+            data: { 
+                labels, 
+                datasets: [{ 
+                    label: 'Capa 대비 실적 (%)', 
+                    data: perfData, 
+                    backgroundColor: perfData.map(v => v < 70 ? '#ef4444' : (v < 90 ? '#fbbf24' : '#10b981')),
+                    borderRadius: 6
+                }] 
             },
-            options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.05)' } } } }
+            plugins: [ChartDataLabels],
+            options: { 
+                indexAxis: 'y', 
+                responsive: true, 
+                maintainAspectRatio: false, 
+                scales: { 
+                    x: { beginAtZero: true, suggestedMax: 100, ticks: { color: '#94a3b8', font: { weight: 'bold' } }, grid: { color: 'rgba(255,255,255,0.05)' } }, 
+                    y: { ticks: { color: '#f1f5f9', font: { size: 14, weight: 'bold' } } } 
+                },
+                plugins: {
+                    datalabels: { anchor: 'end', align: 'right', formatter: v => v + '%', color: '#fff', font: { weight: 'bold', size: 12 } },
+                    legend: { display: false }
+                }
+            }
         });
     }
 
@@ -488,8 +514,8 @@ class JMLMES {
                     <div class="chart-container" style="height: 300px;"><canvas id="machineQualityChart"></canvas></div>
                 </div>
                 <div class="card chart-half-width">
-                    <div class="card-header"><h3><i class="fas fa-chart-line"></i> 공정별 직행율 (Yield Rate) 트렌드</h3></div>
-                    <div class="chart-container" style="height: 300px;"><canvas id="processYieldChart"></canvas></div>
+                    <div class="card-header"><h3><i class="fas fa-vial"></i> 금형 온도 vs 불량률 상관관계</h3></div>
+                    <div class="chart-container" style="height: 300px;"><canvas id="paramChart"></canvas></div>
                 </div>
             </div>
         `;
@@ -510,18 +536,6 @@ class JMLMES {
 
         this.renderCapBoxChart(data);
         this.renderMachineQualityChart(data);
-        this.renderProcessYieldChart(data);
-    }
-
-    renderProcessYieldChart(data) {
-        const ctx = document.getElementById('processYieldChart').getContext('2d');
-        if (this.state.charts.yield) this.state.charts.yield.destroy();
-        const labels = ['성형', '조립', '포장', '검사'];
-        this.state.charts.yield = new Chart(ctx, {
-            type: 'line',
-            data: { labels, datasets: [{ label: '직행율 (%)', data: [98.5, 96.2, 99.1, 99.8], borderColor: '#10b981', backgroundColor: 'rgba(16, 185, 129, 0.1)', fill: true, tension: 0.4 }] },
-            options: { responsive: true, maintainAspectRatio: false, scales: { y: { min: 90, max: 100 } } }
-        });
     }
 
     renderCapBoxChart(data) {
@@ -700,61 +714,11 @@ class JMLMES {
     renderMachineLayout(container, data) {
         container.innerHTML = `
             <div class="card chart-full-width">
-                <div class="card-header">
-                    <h3><i class="fas fa-microchip"></i> 장비별 가동 효율 및 OEE 분석</h3>
-                </div>
-                <div class="chart-container" style="height: 350px;"><canvas id="machineOeeChart"></canvas></div>
-            </div>
-            <div class="chart-row-split mt-20">
-                <div class="card chart-half-width">
-                    <div class="card-header"><h3><i class="fas fa-stopwatch"></i> 장비별 사이클 타임 (Bottleneck) 분석</h3></div>
-                    <div class="chart-container" style="height: 300px;"><canvas id="bottleneckChart"></canvas></div>
-                </div>
-                <div class="card chart-half-width">
-                    <div class="card-header"><h3><i class="fas fa-exclamation-triangle"></i> 비가동 원인 분석 (Downtime)</h3></div>
-                    <div class="chart-container" style="height: 300px;"><canvas id="downtimeChart"></canvas></div>
-                </div>
+                <div class="card-header"><h3><i class="fas fa-microchip"></i> 조립 공정 세부 장비별 생산 실적 (M1~M12)</h3></div>
+                <div class="chart-container" style="height: 400px;"><canvas id="deviceCompareChart"></canvas></div>
             </div>
         `;
-        this.renderMachineOeeChart(data);
-        this.renderBottleneckChart(data);
-        this.renderDowntimeChart(data);
-    }
-
-    renderMachineOeeChart(data) {
-        const ctx = document.getElementById('machineOeeChart').getContext('2d');
-        if (this.state.charts.oee) this.state.charts.oee.destroy();
-        const labels = Array.from({length: 12}, (_, i) => `M${i+1}`);
-        this.state.charts.oee = new Chart(ctx, {
-            type: 'bar',
-            data: {
-                labels,
-                datasets: [
-                    { label: '가동률 (%)', data: labels.map(() => 85 + Math.random()*10), backgroundColor: '#3b82f6' },
-                    { label: '성능 지수 (%)', data: labels.map(() => 90 + Math.random()*8), type: 'line', borderColor: '#fbbf24' }
-                ]
-            },
-            options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, max: 100 } } }
-        });
-    }
-
-    renderBottleneckChart(data) {
-        const ctx = document.getElementById('bottleneckChart').getContext('2d');
-        const labels = Array.from({length: 12}, (_, i) => `M${i+1}`);
-        new Chart(ctx, {
-            type: 'bar',
-            data: { labels, datasets: [{ label: '사이클 타임 (sec)', data: labels.map(() => 2.5 + Math.random()*1.5), backgroundColor: '#ef4444' }] },
-            options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false }
-        });
-    }
-
-    renderDowntimeChart(data) {
-        const ctx = document.getElementById('downtimeChart').getContext('2d');
-        new Chart(ctx, {
-            type: 'pie',
-            data: { labels: ['설비고장', '자재대기', '금형교체', '기타'], datasets: [{ data: [45, 25, 20, 10], backgroundColor: ['#ef4444', '#fbbf24', '#3b82f6', '#94a3b8'] }] },
-            options: { responsive: true, maintainAspectRatio: false }
-        });
+        this.renderDeviceCompareChart(data);
     }
 
     renderDeviceCompareChart(data) {
