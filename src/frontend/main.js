@@ -25,7 +25,8 @@ class JMLMES {
             trendScale: 'daily',
             charts: {},
             pendingUploadData: [],
-            qualityScale: 'daily'
+            qualityScale: 'daily',
+            machineQualityProcess: '조립'
         };
         this.init();
     }
@@ -501,7 +502,15 @@ class JMLMES {
             </div>
             <div class="chart-row-split">
                 <div class="card chart-half-width">
-                    <div class="card-header"><h3><i class="fas fa-industry"></i> 설비별 품질 편차 (1~12호기)</h3></div>
+                    <div class="card-header">
+                        <h3><i class="fas fa-industry"></i> 설비별 품질 편차</h3>
+                        <div class="filter-group-horizontal" id="machine-process-toggle">
+                            <button class="filter-btn ${this.state.machineQualityProcess==='성형'?'active':''}" data-proc="성형">성형</button>
+                            <button class="filter-btn ${this.state.machineQualityProcess==='조립'?'active':''}" data-proc="조립">조립</button>
+                            <button class="filter-btn ${this.state.machineQualityProcess==='포장'?'active':''}" data-proc="포장">포장</button>
+                            <button class="filter-btn ${this.state.machineQualityProcess==='검사'?'active':''}" data-proc="검사">검사</button>
+                        </div>
+                    </div>
                     <div class="chart-container" style="height: 300px;"><canvas id="machineQualityChart"></canvas></div>
                 </div>
                 <div class="card chart-half-width">
@@ -514,6 +523,13 @@ class JMLMES {
         document.querySelectorAll('#quality-scale-group button').forEach(btn => {
             btn.onclick = (e) => {
                 this.state.qualityScale = e.target.dataset.scale;
+                this.renderQualityLayout(container, data);
+            };
+        });
+
+        document.querySelectorAll('#machine-process-toggle .filter-btn').forEach(btn => {
+            btn.onclick = (e) => {
+                this.state.machineQualityProcess = e.target.dataset.proc;
                 this.renderQualityLayout(container, data);
             };
         });
@@ -660,11 +676,38 @@ class JMLMES {
 
     renderMachineQualityChart(data) {
         const ctx = document.getElementById('machineQualityChart').getContext('2d');
-        const labels = Array.from({length: 12}, (_, i) => `${i+1}호기`);
-        new Chart(ctx, {
+        if (this.state.charts.machineQuality) this.state.charts.machineQuality.destroy();
+
+        const process = this.state.machineQualityProcess;
+        // 실제 데이터에서 설비별 필드가 있다면 매핑, 현재는 공정별 특성을 살린 더미 데이터 생성
+        const machineCount = process === '조립' ? 12 : (process === '성형' ? 8 : 4);
+        const labels = Array.from({length: machineCount}, (_, i) => `${i+1}호기`);
+        
+        // 공정별 기본 PPM 베이스라인 설정 (성형은 낮고, 조립은 다소 높은 특성 반영)
+        const basePPM = { '성형': 150, '조립': 450, '포장': 50, '검사': 100 }[process];
+
+        this.state.charts.machineQuality = new Chart(ctx, {
             type: 'bar',
-            data: { labels, datasets: [{ label: '설비별 PPM', data: labels.map(() => 200 + Math.random()*400), backgroundColor: '#818cf8' }] },
-            options: { responsive: true, maintainAspectRatio: false }
+            data: { 
+                labels, 
+                datasets: [{ 
+                    label: `${process} 공정 설비별 PPM`, 
+                    data: labels.map(() => basePPM + Math.random() * (basePPM * 0.5)), 
+                    backgroundColor: process === '조립' ? '#818cf8' : (process === '성형' ? '#3b82f6' : '#10b981'),
+                    borderRadius: 4
+                }] 
+            },
+            options: { 
+                responsive: true, 
+                maintainAspectRatio: false,
+                scales: {
+                    y: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#94a3b8' } },
+                    x: { ticks: { color: '#94a3b8' } }
+                },
+                plugins: {
+                    legend: { display: false }
+                }
+            }
         });
     }
 
