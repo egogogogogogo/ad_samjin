@@ -347,7 +347,10 @@ class JMLMES {
         document.querySelectorAll('#trend-scale-toggle .filter-btn').forEach(b => {
             b.onclick = (e) => { this.state.trendScale = e.target.dataset.scale; this.renderDashboard(); };
         });
-        this.renderTrendChart(data); this.renderParetoChart(data); this.renderProcessChart(data); this.renderAchievementTrendChart(data);
+        this.renderTrendChart(data);
+        this.renderParetoChart(data);
+        this.renderProcessChart(data);
+        setTimeout(() => this.renderAchievementTrendChart(data), 50); // DOM 안정화 후 렌더링
     }
 
     renderTrendChart(data) {
@@ -458,23 +461,37 @@ class JMLMES {
     }
 
     renderAchievementTrendChart(data) {
-        const ctx = document.getElementById('achievementTrendChart').getContext('2d');
+        const canvas = document.getElementById('achievementTrendChart');
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
         if (this.state.charts.achieveTrend) this.state.charts.achieveTrend.destroy();
         
-        const labels = Array.from({length: 10}, (_, i) => `D-${10-i}`);
-        const plan = labels.map((_, i) => 100000 * (i + 1));
-        const actual = labels.map((_, i) => 90000 * (i + 1) + Math.random() * 20000);
+        // 실제 데이터 기반 누적 계산
+        const sorted = [...data].sort((a,b) => new Date(a.work_date) - new Date(b.work_date));
+        const labels = sorted.map(d => d.work_date.slice(5));
+        let runningActual = 0;
+        let runningPlan = 0;
+        const actualData = sorted.map(d => { runningActual += (d.actual_qty||0); return runningActual; });
+        const planData = sorted.map(d => { runningPlan += (d.target_qty||0); return runningPlan; });
 
         this.state.charts.achieveTrend = new Chart(ctx, {
             type: 'line',
             data: {
                 labels,
                 datasets: [
-                    { label: '계획 실적 (누적)', data: plan, borderColor: 'rgba(255,255,255,0.2)', borderDash: [5,5], fill: false },
-                    { label: '현재 실적 (누적)', data: actual, borderColor: '#3b82f6', backgroundColor: 'rgba(59, 130, 246, 0.1)', fill: true, tension: 0.3 }
+                    { label: '누적 계획', data: planData, borderColor: 'rgba(255,255,255,0.3)', borderDash: [5,5], fill: false, pointRadius: 0 },
+                    { label: '누적 실적', data: actualData, borderColor: '#3b82f6', backgroundColor: 'rgba(59, 130, 246, 0.2)', fill: true, tension: 0.3 }
                 ]
             },
-            options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.05)' } } } }
+            options: { 
+                responsive: true, 
+                maintainAspectRatio: false, 
+                plugins: { legend: { display: true, labels: { color: '#94a3b8' } } },
+                scales: { 
+                    y: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#94a3b8' } },
+                    x: { grid: { display: false }, ticks: { color: '#94a3b8' } }
+                } 
+            }
         });
     }
 
