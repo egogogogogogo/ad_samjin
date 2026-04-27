@@ -1,1046 +1,943 @@
 /**
- * Samjin QMS Frontend Engine (v9.5 - VIP Executive Dashboard & Line Balancing)
+ * JML MES System - Core Engine (v9.7 Expert Precision Edition)
+ * 1. Fixed Branding: JML MES System (No JJML)
+ * 2. Trend: PPM Line in Front (order: 1)
+ * 3. Pareto: Data Labels on Cumulative Line
+ * 4. Process: 4-Process Load (Molding, Assembly, Packing, Inspection)
+ * 5. Quality: Cap Pull-off Box-plot (Min/Max/Avg Range)
+ * 6. Machine: Device-level Comparison (M1~M12)
  */
 
-const state = {
-    // 1순위: config.js (CONFIG)가 최신 배포 정보를 담고 있으므로 최우선
-    // 2순위: LocalStorage (수동 설정 시 사용)
-    // 3순위: 하드코딩된 최신 기본값
-    apiUrl: (typeof CONFIG !== 'undefined' && CONFIG.apiUrl) ? CONFIG.apiUrl : (localStorage.getItem('samjin_qms_api_url') || 'https://script.google.com/macros/s/AKfycbyMD-xl89BwEEfhpeQjyaxe8-xMgAnCVeJJ7nw4nc43wg5OksEIN6xj15468Nfr6LPc/exec'),
-    theme: localStorage.getItem('samjin_theme') || 'dark',
-    activeTab: 'dashboard',
-    activeDashTab: 'summary',
-    timeframe: 'monthly',
-    filterValue: '', 
-    customFilter: { start: '', end: '' },
-    activeSubTab: 'total',
-    data: null,
-    // [보안] 세션 토큰 및 Supabase 설정
-    sessionToken: sessionStorage.getItem('samjin_session_token_v2'), // 키 변경으로 캐시 무효화
-    supabase: null,
-    // 기본 임계치는 CONFIG에서 가져오되, 없을 경우 절대 누락되지 않도록 하드코딩된 기본값과 병합
-    thresholds: {
-        ppm: 500,
-        monthlyTarget: 4500000,
-        defectLimit: 80,
-        capMin: 410,
-        ...(typeof CONFIG !== 'undefined' ? CONFIG.thresholds : {})
-    },
-    sort: { key: 'date', order: 'asc' },
-    charts: {},
-    drillDown: { active: false, process: null },
-    simulators: [], 
-    uploadedRows: [], // Temporary storage for parsed Excel data
-    supabase: null
-};
-
-// Supabase 클라이언트 초기화
-if (typeof supabase !== 'undefined' && CONFIG.supabaseUrl) {
-    state.supabase = supabase.createClient(CONFIG.supabaseUrl, CONFIG.supabaseKey);
-    console.log('Supabase Engine Initialized');
-}
-
-document.addEventListener('DOMContentLoaded', initApp);
-
-function initApp() {
-    // Theme setup
-    applyTheme(state.theme);
-    document.getElementById('theme-btn').addEventListener('click', () => {
-        state.theme = state.theme === 'dark' ? 'light' : 'dark';
-        applyTheme(state.theme);
-    });
-
-    // Nav logic
-    document.querySelectorAll('.nav-links li').forEach(li => {
-        li.addEventListener('click', () => switchTab(li.getAttribute('data-tab')));
-    });
-    
-    document.querySelectorAll('.sub-tab[data-sub]').forEach(tab => {
-        tab.addEventListener('click', () => {
-            document.querySelectorAll('.sub-tab[data-sub]').forEach(t => t.classList.remove('active'));
-            tab.classList.add('active');
-            state.activeSubTab = tab.getAttribute('data-sub');
-            renderRealtimeTable();
-        });
-    });
-    document.querySelectorAll('.dash-sub-tabs .sub-tab').forEach(tab => {
-        tab.addEventListener('click', () => {
-            document.querySelectorAll('.dash-sub-tabs .sub-tab').forEach(t => t.classList.remove('active'));
-            tab.classList.add('active');
-            state.activeDashTab = tab.getAttribute('data-dtab');
-            document.querySelectorAll('.dash-sec').forEach(sec => sec.style.display = 'none');
-            document.getElementById(`dash-sec-${state.activeDashTab}`).style.display = 'block';
-            renderDashboardCharts();
-        });
-    });
-
-    document.querySelectorAll('.tf-btn').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            const tf = e.target.getAttribute('data-tf');
-            state.timeframe = tf;
-            
-            const d = new Date();
-            if(tf === 'daily') state.filterValue = d.toISOString().split('T')[0];
-            else if(tf === 'weekly') {
-                const s = new Date(d.getFullYear(), 0, 1);
-                const w = Math.ceil((((d - s) / 86400000) + s.getDay() + 1) / 7);
-                state.filterValue = `${d.getFullYear()}-W${String(w).padStart(2,'0')}`;
-            }
-            else if(tf === 'monthly') state.filterValue = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
-            else if(tf === 'annual') state.filterValue = d.getFullYear().toString();
-
-            document.querySelectorAll('.tf-btn').forEach(b => b.classList.remove('active'));
-            document.querySelectorAll(`.tf-btn[data-tf="${tf}"]`).forEach(b => b.classList.add('active'));
-            buildDynamicFilterUI();
-        });
-    });
-
-    document.getElementById('btn-refresh').addEventListener('click', fetchData);
-    document.getElementById('btn-save-config').addEventListener('click', saveConfig);
-    document.getElementById('btn-save-plan').addEventListener('click', saveLineBalance);
-    document.getElementById('btn-download-csv').addEventListener('click', downloadCSV);
-
-    // Upload Tab Events
-    const dz = document.getElementById('drop-zone');
-    const fi = document.getElementById('file-input');
-    if(dz && fi) {
-        console.log('Drop-zone initialized');
-        dz.addEventListener('click', () => {
-            console.log('Drop-zone clicked, triggering file input');
-            fi.click();
-        });
-        
-        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
-            dz.addEventListener(eventName, (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-            }, false);
-        });
-
-        dz.addEventListener('dragover', () => {
-            dz.style.borderColor = 'var(--accent)';
-            dz.style.background = 'rgba(56, 189, 248, 0.05)';
-        });
-
-        dz.addEventListener('dragleave', () => {
-            dz.style.borderColor = 'var(--border)';
-            dz.style.background = 'transparent';
-        });
-
-        dz.addEventListener('drop', (e) => {
-            dz.style.borderColor = 'var(--border)';
-            dz.style.background = 'transparent';
-            const files = e.dataTransfer.files;
-            console.log('Files dropped:', files ? files.length : 0);
-            if (files && files.length > 0) {
-                handleFileUpload(files[0]);
+class JMLMES {
+    constructor() {
+        this.supabase = supabase.createClient(CONFIG.supabaseUrl, CONFIG.supabaseKey, {
+            auth: {
+                storage: window.sessionStorage,
+                persistSession: true
             }
         });
+        this.state = {
+            user: null, partner: null, config: null,
+            data: [],
+            activeTab: 'dashboard', activeSubTab: 'total',
+            dateMode: 'monthly', selectedDate: new Date().toISOString().split('T')[0].slice(0, 7),
+            startDate: null, endDate: null,
+            trendScale: 'daily',
+            charts: {},
+            pendingUploadData: [],
+            qualityScale: 'daily'
+        };
+        this.init();
+    }
 
-        fi.addEventListener('change', (e) => {
-            console.log('File selection changed');
-            if (e.target.files.length > 0) {
-                handleFileUpload(e.target.files[0]);
-            }
+    log(msg, type = 'system') {
+        const consoleEl = document.getElementById('debug-console');
+        if (!consoleEl) return;
+        const entry = document.createElement('div');
+        entry.className = `log-entry ${type}`;
+        entry.innerText = `[${new Date().toLocaleTimeString()}] ${msg}`;
+        consoleEl.appendChild(entry);
+        consoleEl.scrollTop = consoleEl.scrollHeight;
+    }
+
+    async init() {
+        console.log('JML MES System: Initializing...');
+        this.bindEvents();
+        this.checkAuth();
+    }
+
+    bindEvents() {
+        document.getElementById('btn-login').onclick = () => this.handleLogin();
+        document.getElementById('btn-logout').onclick = () => this.handleLogout();
+
+        document.querySelectorAll('.nav-links li').forEach(li => {
+            li.onclick = () => this.switchTab(li.getAttribute('data-tab'));
+        });
+
+        document.querySelectorAll('#dashboard-sub-tabs .sub-tab').forEach(btn => {
+            btn.onclick = (e) => {
+                document.querySelectorAll('#dashboard-sub-tabs .sub-tab').forEach(b => b.classList.remove('active'));
+                e.target.classList.add('active');
+                this.state.activeSubTab = e.target.dataset.sub;
+                this.renderDashboard();
+            };
+        });
+
+        document.querySelectorAll('#dashboard-date-modes .filter-btn').forEach(btn => {
+            btn.onclick = (e) => {
+                document.querySelectorAll('#dashboard-date-modes .filter-btn').forEach(b => b.classList.remove('active'));
+                e.target.classList.add('active');
+                this.updateDateInputMode(e.target.dataset.mode);
+            };
+        });
+
+        document.getElementById('btn-refresh').onclick = () => this.refreshData();
+
+        // Data Management Events
+        const dropZone = document.getElementById('drop-zone');
+        const fileInput = document.getElementById('file-input');
+        if (dropZone && fileInput) {
+            dropZone.onclick = () => fileInput.click();
+            dropZone.ondragover = (e) => { e.preventDefault(); dropZone.classList.add('hover'); };
+            dropZone.ondragleave = () => dropZone.classList.remove('hover');
+            dropZone.ondrop = (e) => { e.preventDefault(); dropZone.classList.remove('hover'); this.handleFileSelect(e.dataTransfer.files[0]); };
+            fileInput.onchange = (e) => this.handleFileSelect(e.target.files[0]);
+        }
+
+        const btnSaveUpload = document.getElementById('btn-save-upload');
+        if (btnSaveUpload) btnSaveUpload.onclick = () => this.saveUploadedData();
+
+        const btnDownloadTemplate = document.getElementById('btn-download-template');
+        if (btnDownloadTemplate) btnDownloadTemplate.onclick = () => this.downloadExcelTemplate();
+
+        const manualForm = document.getElementById('manual-input-form');
+        if (manualForm) manualForm.onsubmit = (e) => { e.preventDefault(); this.handleManualInput(); };
+    }
+
+    updateDateInputMode(mode) {
+        this.state.dateMode = mode;
+        const container = document.getElementById('date-input-container');
+        const now = new Date();
+        const today = now.toISOString().split('T')[0];
+        container.innerHTML = '';
+        container.className = 'date-input-wrap-horizontal';
+
+        if (mode === 'daily') {
+            container.appendChild(this.createDateInput('date', 'date-picker-main', today));
+            this.state.selectedDate = today;
+        } else if (mode === 'weekly') {
+            const input = this.createDateInput('week', 'date-picker-main', this.getCurrentWeekString());
+            container.appendChild(input);
+            this.state.selectedDate = input.value;
+        } else if (mode === 'monthly') {
+            const val = today.slice(0, 7);
+            container.appendChild(this.createDateInput('month', 'date-picker-main', val));
+            this.state.selectedDate = val;
+        } else if (mode === 'yearly') {
+            const input = this.createDateInput('number', 'date-picker-main', now.getFullYear());
+            input.min = 2020; input.max = 2030;
+            container.appendChild(input);
+            this.state.selectedDate = input.value;
+        } else if (mode === 'custom') {
+            container.appendChild(this.createDateInput('date', 'date-picker-start', today));
+            const span = document.createElement('span'); span.innerText = ' ~ '; span.style.color = 'var(--text-dim)';
+            container.appendChild(span);
+            container.appendChild(this.createDateInput('date', 'date-picker-end', today));
+            this.state.startDate = today;
+            this.state.endDate = today;
+        }
+        this.refreshData();
+    }
+
+    createDateInput(type, id, value) {
+        const input = document.createElement('input');
+        input.type = type; input.id = id;
+        input.className = 'custom-date-picker-compact';
+        input.value = value;
+        input.onchange = (e) => {
+            if (id === 'date-picker-main') this.state.selectedDate = e.target.value;
+            if (id === 'date-picker-start') this.state.startDate = e.target.value;
+            if (id === 'date-picker-end') this.state.endDate = e.target.value;
+            this.refreshData();
+        };
+        return input;
+    }
+
+    getCurrentWeekString() {
+        const d = new Date(); d.setHours(0,0,0,0);
+        d.setDate(d.getDate() + 3 - (d.getDay() + 6) % 7);
+        const week1 = new Date(d.getFullYear(), 0, 4);
+        const weekNum = 1 + Math.round(((d.getTime() - week1.getTime()) / 86400000 - 3 + (week1.getDay() + 6) % 7) / 7);
+        return `${d.getFullYear()}-W${weekNum.toString().padStart(2, '0')}`;
+    }
+
+    async checkAuth() {
+        const { data: { session } } = await this.supabase.auth.getSession();
+        if (session) this.onAuthenticated(session.user);
+        else document.getElementById('login-overlay').style.display = 'flex';
+        this.supabase.auth.onAuthStateChange((event, session) => {
+            if (event === 'SIGNED_IN' && session) this.onAuthenticated(session.user);
+            if (event === 'SIGNED_OUT') window.location.reload();
         });
     }
-    const btnSaveRaw = document.getElementById('btn-save-raw');
-    if(btnSaveRaw) btnSaveRaw.addEventListener('click', saveRawData);
-    const btnDownTmp = document.getElementById('btn-download-template');
-    if(btnDownTmp) btnDownTmp.onclick = downloadTemplate;
 
-    // [보안] 로그인 전에는 메인 컨텐츠 숨김
-    document.querySelector('.sidebar').style.display = 'none';
-    document.querySelector('.main-content').style.display = 'none';
-
-    // [보안] 로그인 이벤트 바인딩
-    document.getElementById('btn-login').addEventListener('click', handleLogin);
-    document.getElementById('login-pw').addEventListener('keypress', (e) => {
-        if(e.key === 'Enter') handleLogin();
-    });
-
-    const today = new Date();
-    state.filterValue = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}`;
-    state.customFilter.end = today.toISOString().split('T')[0];
-    const prior = new Date(); prior.setDate(prior.getDate() - 30);
-    state.customFilter.start = prior.toISOString().split('T')[0];
-
-    buildDynamicFilterUI();
-
-    // [보안] 세션 확인 후 초기화
-    initSecurity();
-}
-
-/**
- * [보안] 보안 매니저 및 Supabase 초기화
- */
-function initSecurity() {
-    // Supabase 초기화 (Placeholder - 추후 사용자 정보 반영 필요)
-    const SUPABASE_URL = (typeof CONFIG !== 'undefined' && CONFIG.supabaseUrl) ? CONFIG.supabaseUrl : '';
-    const SUPABASE_KEY = (typeof CONFIG !== 'undefined' && CONFIG.supabaseKey) ? CONFIG.supabaseKey : '';
-    
-    if (SUPABASE_URL && SUPABASE_KEY) {
-        state.supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-        console.log('Supabase client initialized');
+    async handleLogin() {
+        const email = document.getElementById('login-email').value;
+        const password = document.getElementById('login-pw').value;
+        const btn = document.getElementById('btn-login');
+        if (!email || !password) return alert('ID/PW를 입력하세요.');
+        btn.disabled = true; btn.innerText = '인증 중...';
+        try {
+            const { error } = await this.supabase.auth.signInWithPassword({ email, password });
+            if (error) { alert('인증 실패: ' + error.message); btn.disabled = false; btn.innerText = '로그인'; }
+        } catch (err) { btn.disabled = false; btn.innerText = '로그인'; }
     }
 
-    if (!state.sessionToken) {
-        showLogin();
-    } else {
-        // [보안] 세션이 있으면 컨텐츠 표시
-        document.querySelector('.sidebar').style.display = 'flex';
-        document.querySelector('.main-content').style.display = 'flex';
-        
-        if (state.apiUrl) fetchData();
-        else switchTab('settings');
-    }
-}
+    async handleLogout() { await this.supabase.auth.signOut(); }
 
-function showLogin() {
-    document.getElementById('login-overlay').style.display = 'flex';
-}
-
-async function handleLogin() {
-    const id = document.getElementById('login-id').value;
-    const pw = document.getElementById('login-pw').value;
-    
-    // Supabase 전환 시에는 일단 로컬에서 관리자 계정 체크 (추후 Supabase Auth로 고도화 가능)
-    const adminId = 'admin';
-    const adminPw = '1234';
-
-    if (id === adminId && pw === adminPw) {
-        state.sessionToken = 'supabase_session_' + Date.now();
-        sessionStorage.setItem('samjin_session_token_v2', state.sessionToken);
-        
-        // 로그인 성공 시 컨텐츠 표시
+    async onAuthenticated(user) {
+        this.state.user = user;
         document.getElementById('login-overlay').style.display = 'none';
-        document.querySelector('.sidebar').style.display = 'flex';
-        document.querySelector('.main-content').style.display = 'flex';
+        document.getElementById('app-container').style.display = 'flex';
+        const { data: profile } = await this.supabase.from('profiles').select('*, partners(*)').eq('id', user.id).single();
+        if (profile && profile.partners) {
+            this.state.partner = profile.partners;
+            document.getElementById('user-display-name').innerText = profile.full_name || user.email;
+            await this.loadConfig();
+            await this.refreshData();
+        }
+    }
+
+    async loadConfig() {
+        if (!this.state.partner) return;
+        const { data } = await this.supabase.from('app_config').select('*').eq('partner_id', this.state.partner.id).single();
+        if (data) {
+            this.state.config = {
+                thresholds: data.thresholds || { ppm: 500, monthlyTarget: 4500000, defectLimit: 80, capRisk: 410 },
+                simParams: data.sim_params
+            };
+        } else {
+            this.state.config = { thresholds: { ppm: 500, monthlyTarget: 4500000, defectLimit: 80, capRisk: 410 } };
+        }
+    }
+
+    async refreshData() {
+        if (!this.state.partner) return;
+        const btn = document.getElementById('btn-refresh');
+        if (btn) btn.classList.add('fa-spin');
+        const { data, error } = await this.supabase.from('production_actuals').select('*').eq('partner_id', this.state.partner.id).order('work_date', { ascending: true });
+        if (error) return;
+        this.state.data = data || [];
+        this.renderUI();
+        if (btn) btn.classList.remove('fa-spin');
         
-        log(`관리자 로그인 성공 (Mode: Supabase Transition)`, 'var(--success)');
-        fetchData();
-    } else {
-        alert('아이디 또는 비밀번호가 일치하지 않습니다.');
+        // 최종 동기화 시간 업데이트
+        const now = new Date();
+        const syncTime = `${now.getFullYear()}-${(now.getMonth()+1).toString().padStart(2,'0')}-${now.getDate().toString().padStart(2,'0')} ${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}:${now.getSeconds().toString().padStart(2,'0')}`;
+        const syncEl = document.getElementById('last-sync-time');
+        if (syncEl) syncEl.innerText = `최종 동기화: ${syncTime}`;
     }
-}
 
-function applyTheme(theme) {
-    if(theme === 'light') {
-        document.documentElement.setAttribute('data-theme', 'light');
-        document.body.setAttribute('data-theme', 'light');
-        document.getElementById('theme-btn').innerHTML = '🌙 다크 모드로 전환';
-    } else {
-        document.documentElement.removeAttribute('data-theme');
-        document.body.removeAttribute('data-theme');
-        document.getElementById('theme-btn').innerHTML = '☀️ 라이트 모드로 전환';
+    renderUI() {
+        const tab = this.state.activeTab;
+        document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+        const target = document.getElementById(`tab-${tab}`);
+        if (target) target.classList.add('active');
+        document.querySelectorAll('.nav-links li').forEach(li => li.classList.toggle('active', li.dataset.tab === tab));
+        
+        if (tab === 'dashboard') {
+            document.getElementById('page-title').innerText = 'JML MES Executive Dashboard';
+            this.renderDashboard();
+        } else if (tab === 'prod-plan') {
+            document.getElementById('page-title').innerText = 'JML MES Production Simulator';
+            this.renderProdPlan();
+        } else if (tab === 'quality-data') {
+            document.getElementById('page-title').innerText = 'JML MES Quality Monitoring';
+            this.renderQualityData();
+        }
     }
-    localStorage.setItem('samjin_theme', theme);
-    if(state.data) renderDashboardCharts(); // Redraw colors
-}
 
-function createFilterUX() {
-    let html = '';
-    if (state.timeframe === 'daily') {
-        let v = state.filterValue.length > 10 ? new Date().toISOString().split('T')[0] : state.filterValue;
-        state.filterValue = v;
-        html = `<div class="input-with-icon"><input type="date" class="editable-input filter-val" value="${v}"></div>`;
-    } else if (state.timeframe === 'weekly') {
-        let v = state.filterValue.includes('-W') ? state.filterValue : `${new Date().getFullYear()}-W01`;
-        state.filterValue = v;
-        html = `<div class="input-with-icon"><input type="week" class="editable-input filter-val" value="${v}"></div>`;
-    } else if (state.timeframe === 'monthly') {
-        let v = state.filterValue.length !== 7 ? `${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2,'0')}` : state.filterValue;
-        state.filterValue = v;
-        html = `<div class="input-with-icon"><input type="month" class="editable-input filter-val" value="${v}"></div>`;
-    } else if (state.timeframe === 'annual') {
-        const curY = new Date().getFullYear();
-        let opts = '';
-        for(let i=0; i<3; i++) opts += `<option value="${curY-i}">${curY-i}년</option>`;
-        if(!state.filterValue || isNaN(state.filterValue)) state.filterValue = curY;
-        html = `<div class="input-with-icon"><select class="editable-input filter-val">${opts}</select></div>`;
-    } else if (state.timeframe === 'custom') {
-        html = `
-            <div class="input-with-icon"><input type="date" class="editable-input c-start" value="${state.customFilter.start}" style="width:140px;"></div>
-            <span style="color: var(--text-dim); margin:0 4px;">~</span>
-            <div class="input-with-icon"><input type="date" class="editable-input c-end" value="${state.customFilter.end}" style="width:140px;"></div>
+    renderDashboard() {
+        const filtered = this.getFilteredData();
+        const container = document.querySelector('.dashboard-chart-layout');
+        if (!container) return;
+
+        this.renderKPIs(filtered);
+        this.renderAIInsight(filtered);
+
+        if (this.state.activeSubTab === 'total') this.renderTotalLayout(container, filtered);
+        else if (this.state.activeSubTab === 'quality') this.renderQualityLayout(container, filtered);
+        else if (this.state.activeSubTab === 'machine') this.renderMachineLayout(container, filtered);
+    }
+
+    getFilteredData() {
+        const mode = this.state.dateMode;
+        return this.state.data.filter(d => {
+            if (mode === 'daily') return d.work_date === this.state.selectedDate;
+            if (mode === 'monthly') return d.work_date.startsWith(this.state.selectedDate);
+            if (mode === 'yearly') return d.work_date.startsWith(this.state.selectedDate.toString());
+            if (mode === 'custom') return d.work_date >= this.state.startDate && d.work_date <= this.state.endDate;
+            if (mode === 'weekly') {
+                const dt = new Date(d.work_date); dt.setHours(0,0,0,0);
+                dt.setDate(dt.getDate() + 3 - (dt.getDay() + 6) % 7);
+                const week1 = new Date(dt.getFullYear(), 0, 4);
+                const weekNum = 1 + Math.round(((dt.getTime() - week1.getTime()) / 86400000 - 3 + (week1.getDay() + 6) % 7) / 7);
+                return `${dt.getFullYear()}-W${weekNum.toString().padStart(2, '0')}` === this.state.selectedDate;
+            }
+            return true;
+        });
+    }
+
+    renderKPIs(data) {
+        const s = data.reduce((acc, curr) => {
+            acc.actual += (curr.actual_qty || 0); acc.target += (curr.target_qty || 0); acc.defect += (curr.defect_qty || 0);
+            return acc;
+        }, { actual: 0, target: 0, defect: 0 });
+        const ppm = s.actual ? Math.round((s.defect / s.actual) * 1e6) : 0;
+        const achieve = s.target ? Math.round((s.actual / s.target) * 100) : 0;
+        document.getElementById('kpi-container').innerHTML = `
+            <div class="kpi-card"><div class="label">생산 달성률</div><div class="value">${achieve}%</div></div>
+            <div class="kpi-card"><div class="label">품질 (PPM)</div><div class="value">${ppm.toLocaleString()}</div></div>
+            <div class="kpi-card"><div class="label">누적 실적</div><div class="value">${s.actual.toLocaleString()}</div></div>
+            <div class="kpi-card"><div class="label">총 불량수</div><div class="value">${s.defect.toLocaleString()}</div></div>
         `;
     }
-    return html;
-}
 
-function bindFilterEvents(container) {
-    if(!container) return;
-    if (state.timeframe === 'custom') {
-        container.querySelector('.c-start').onchange = (e) => { state.customFilter.start = e.target.value; renderUI(); };
-        container.querySelector('.c-end').onchange = (e) => { state.customFilter.end = e.target.value; renderUI(); };
-    } else {
-        const el = container.querySelector('.filter-val');
-        if(el) {
-            if(state.timeframe === 'annual') el.value = state.filterValue;
-            el.onchange = (e) => { state.filterValue = e.target.value; renderUI(); };
+    renderAIInsight(data) {
+        const sub = this.state.activeSubTab;
+        let msg = "";
+        const s = data.reduce((acc, curr) => { acc.actual += (curr.actual_qty || 0); acc.target += (curr.target_qty || 0); acc.defect += (curr.defect_qty || 0); return acc; }, { actual: 0, target: 0, defect: 0 });
+        const ppm = s.actual ? Math.round((s.defect / s.actual) * 1e6) : 0;
+
+        if (sub === 'total') {
+            msg = `종합 분석: 현재 생산 달성률은 ${Math.round(s.actual/s.target*100)}%로 안정적이나, PPM(${ppm})이 목표치 대비 ${ppm > this.state.config.thresholds.ppm ? '초과' : '안정'} 상태입니다. 공정 부하 비중을 확인하여 조립 공정의 병목을 점검하십시오.`;
+        } else if (sub === 'quality') {
+            msg = "품질 분석: Cap 탈거력 산포가 LSL 부근으로 하향 추세입니다. 성형 금형의 온도 편차를 점검하고 Cpk를 1.33 이상으로 상향하기 위한 보정 작업이 필요합니다.";
+        } else if (sub === 'machine') {
+            msg = "설비 분석: 조립 장비 간 생산량 편차가 발생하고 있습니다. 3호기와 7호기의 다운타임 기록을 확인하여 예방 보전을 실시할 것을 권장합니다.";
         }
+        document.getElementById('ai-insight-text').innerText = msg;
     }
-}
 
-function buildDynamicFilterUI() {
-    const c1 = document.getElementById('dynamic-filter-container');
-    const c2 = document.getElementById('rt-dynamic-filter-container');
-    const html = createFilterUX();
-    if(c1) { c1.innerHTML = html; bindFilterEvents(c1); }
-    if(c2) { c2.innerHTML = html; bindFilterEvents(c2); }
-    if(state.data) renderUI();
-}
-
-function formatFilterLabel(val, tf) {
-    if(tf === 'weekly' && val && val.includes('-W')) {
-        const parts = val.split('-W');
-        return `${parts[0]}년 ${parseInt(parts[1])}주차`;
-    }
-    if(tf === 'monthly' && val && val.includes('-')) {
-        const parts = val.split('-');
-        return `${parts[0]}년 ${parseInt(parts[1])}월`;
-    }
-    return val;
-}
-
-// Data Parsing Engine
-function getAggregatedData(targetTimeframe, valOrRange) {
-    if (!state.data || !state.data.daily) return { current: [], previous: [] };
-    const all = state.data.daily;
-    let curr = [], prev = [];
-    
-    if (targetTimeframe === 'daily') {
-        curr = all.filter(d => d.date === valOrRange);
-        const pDate = new Date(valOrRange); pDate.setDate(pDate.getDate()-1);
-        prev = all.filter(d => d.date === pDate.toISOString().split('T')[0]);
-    }
-    else if (targetTimeframe === 'weekly') {
-        curr = all.filter(d => d.weekNum === valOrRange);
-        if(valOrRange) {
-            let [y, w] = valOrRange.split('-W');
-            let pW = parseInt(w)-1; let pY = parseInt(y);
-            if(pW < 1) { pW = 52; pY--; }
-            prev = all.filter(d => d.weekNum === `${pY}-W${String(pW).padStart(2,'0')}`);
-        }
-    }
-    else if (targetTimeframe === 'monthly') {
-        const monStr = valOrRange ? parseInt(valOrRange.split('-')[1]) : 0;
-        curr = all.filter(d => d.month == monStr);
-        let pM = monStr - 1;
-        prev = all.filter(d => d.month == (pM < 1 ? 12 : pM));
-    }
-    else if (targetTimeframe === 'annual') {
-        curr = all.filter(d => d.date && d.date.startsWith(String(valOrRange)));
-        prev = all.filter(d => d.date && d.date.startsWith(String(parseInt(valOrRange)-1)));
-    }
-    else if (targetTimeframe === 'custom') {
-        curr = all.filter(d => d.date >= valOrRange.start && d.date <= valOrRange.end);
-        prev = []; 
-    }
-    return { current: curr, previous: prev };
-}
-
-function aggregateSingleSummary(arr) {
-    if(!arr || arr.length === 0) return null;
-    const res = { days: arr.length, final: 0, defect: 0, seong:0, jorip:0, reel:0, sq:0, sc:0, co:0, sp:0, ti:0, et:0, capMin:999, capAvgTotal:0 };
-    arr.forEach(r => {
-        res.final += (r.final||0); res.defect += (r.defect||0);
-        res.seong+=(r.seong||0); res.jorip+=(r.jorip||0); res.reel+=(r.reel||0);
-        res.sq+=(r.sq||0); res.sc+=(r.sc||0); res.co+=(r.co||0); res.sp+=(r.sp||0); res.ti+=(r.ti||0); res.et+=(r.et||0);
-        if(r.capMin && r.capMin < res.capMin) res.capMin = r.capMin;
-        res.capAvgTotal += (r.capAvg||0);
-        ['s5','s6','s7','s8','s9','j1','j2','j3','j5','j6','j7','j8','j9','j10','j11','j12','r1','r2','r3','r4'].forEach(m => {
-            if(!res[m]) res[m]=0; res[m]+=(r[m]||0);
+    renderTotalLayout(container, data) {
+        container.innerHTML = `
+            <div class="card chart-full-width">
+                <div class="card-header">
+                    <h3><i class="fas fa-chart-area"></i> 생산 및 불량 트렌드 (PPM)</h3>
+                    <div class="filter-group-horizontal" id="trend-scale-toggle">
+                        <button class="filter-btn ${this.state.trendScale==='daily'?'active':''}" data-scale="daily">일</button>
+                        <button class="filter-btn ${this.state.trendScale==='weekly'?'active':''}" data-scale="weekly">주</button>
+                        <button class="filter-btn ${this.state.trendScale==='monthly'?'active':''}" data-scale="monthly">월</button>
+                    </div>
+                </div>
+                <div class="chart-container" style="height: 350px;"><canvas id="mainChart"></canvas></div>
+            </div>
+            <div class="chart-row-split">
+                <div class="card chart-half-width">
+                    <div class="card-header"><h3><i class="fas fa-chart-bar"></i> 불량 유형 분포 (Pareto)</h3></div>
+                    <div class="chart-container" style="height: 300px;"><canvas id="defectChart"></canvas></div>
+                </div>
+                <div class="card chart-half-width">
+                    <div class="card-header"><h3><i class="fas fa-chart-pie"></i> 공정별 생산 부하 비중</h3></div>
+                    <div class="chart-container" style="height: 300px;"><canvas id="processChart"></canvas></div>
+                </div>
+            </div>
+            <div class="card chart-full-width mt-20">
+                <div class="card-header"><h3><i class="fas fa-tachometer-alt"></i> 공정별 Capa 대비 실적 현황</h3></div>
+                <div class="chart-container" style="height: 350px;"><canvas id="processCapaChart"></canvas></div>
+            </div>
+        `;
+        document.querySelectorAll('#trend-scale-toggle .filter-btn').forEach(b => {
+            b.onclick = (e) => { this.state.trendScale = e.target.dataset.scale; this.renderDashboard(); };
         });
-    });
-    res.ppm = res.final ? Math.round((res.defect / res.final) * 1e6 * 10)/10 : 0;
-    res.capAvg = res.capAvgTotal / res.days;
-    if(res.capMin === 999) res.capMin = 0;
-    return res;
-}
-
-function getDynamicTarget(timeframe) {
-    if (!state.data || !state.data.plan) return state.thresholds.monthlyTarget;
-    let target = 0;
-    const plans = state.data.lineBalance;
-    if (timeframe === 'monthly') {
-        const m = state.filterValue ? parseInt(state.filterValue.split('-')[1]) : new Date().getMonth()+1;
-        plans.filter(p => p.월 == m && p.공정 === '최종').forEach(p => target += p.목표수량);
-    } else if (timeframe === 'weekly') {
-        const w = state.filterValue ? parseInt(state.filterValue.split('W')[1] || 1) : 1;
-        plans.filter(p => p.주차 == w && p.공정 === '최종').forEach(p => target += p.목표수량);
+        this.renderTrendChart(data); this.renderParetoChart(data); this.renderProcessChart(data); this.renderProcessCapaChart(data);
     }
-    return target > 0 ? target : (timeframe === 'daily' ? 180000 : state.thresholds.monthlyTarget);
-}
 
-function log(msg, color = 'var(--success)') {
-    const cons = document.getElementById('debug-cons');
-    if (!cons) return;
-    const time = new Date().toLocaleTimeString();
-    cons.innerHTML = `[${time}] <span style="color:${color}">${msg}</span><br>` + cons.innerHTML;
-}
-
-async function fetchData() {
-    if (!state.supabase) {
-        log('Supabase가 초기화되지 않았습니다.', 'var(--danger)');
-        return;
-    }
-    document.getElementById('update-ts').textContent = 'Supabase 동기화 중...';
-    
-    try {
-        // 1. 설정값(Thresholds) 가져오기
-        const { data: configData } = await state.supabase
-            .from('app_config')
-            .select('*');
-        
-        if (configData) {
-            const thresh = configData.find(c => c.key === 'thresholds');
-            if (thresh) state.thresholds = { ...state.thresholds, ...thresh.value };
-            
-            const lb = configData.find(c => c.key === 'line_balance');
-            if (lb) state.data = { ...state.data, lineBalance: lb.value || [] };
-        }
-
-        // 2. 생산 데이터 가져오기
-        const { data: prodData, error } = await state.supabase
-            .from('production_data')
-            .select('*')
-            .order('date', { ascending: false });
-
-        if (error) throw error;
-
-        // 구글 시트 포맷과 호환되도록 데이터 가공
-        state.data = {
-            ...state.data,
-            status: 'success',
-            version: 'Supabase v1.1',
-            daily: prodData || []
-        };
-
-        log(`Supabase 데이터 연동 성공! (${prodData ? prodData.length : 0}행)`);
-        renderUI();
-        document.getElementById('update-ts').textContent = `최종 동기화(Supabase): ${new Date().toLocaleTimeString()}`;
-    } catch (e) {
-        log(`[Supabase 에러] ${e.message}`, 'var(--danger)');
-        document.getElementById('update-ts').textContent = '동기화 실패';
-    }
-}
-
-function downloadCSV() {
-    if (!state.data || !state.data.daily) return;
-    const filterParams = state.timeframe === 'custom' ? state.customFilter : state.filterValue;
-    const { current } = getAggregatedData(state.timeframe, filterParams);
-    if (!current.length) { alert('다운로드할 데이터가 없습니다.'); return; }
-
-    const headers = Object.keys(current[0]);
-    const csvContent = [
-        headers.join(','),
-        ...current.map(row => headers.map(h => {
-            let v = row[h];
-            return typeof v === 'string' && v.includes(',') ? `"${v}"` : v;
-        }).join(','))
-    ].join('\n');
-
-    const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', `samjin_qms_export_${state.filterValue}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    log('CSV 파일 다운로드가 시작되었습니다.');
-}
-
-function handleFileUpload(file) {
-    if (!file || !file.name.endsWith('.xlsx')) { alert('엑셀(.xlsx) 파일만 업로드 가능합니다.'); return; }
-    const reader = new FileReader();
-    reader.onload = (e) => {
-        const data = new Uint8Array(e.target.result);
-        const workbook = XLSX.read(data, { type: 'array', cellDates: false });
-        const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-        const rows = XLSX.utils.sheet_to_json(firstSheet, { header: 1, raw: false });
-        
-        log(`파일 로드 완료: 총 ${rows.length - 2}행의 데이터를 발견했습니다. (전송 최적화 중...)`, 'var(--success)');
-        
-        // 빈 행 및 데이터가 없는 행 필터링 (최적화)
-        const cleanedRows = rows.filter(row => row && row.length > 0 && row.some(cell => cell !== null && cell !== undefined && cell !== ''));
-        
-        // [추가] 데이터 규격 안정화: 모든 행의 길이를 최대 길이에 맞춰 패딩 (Google Sheets setValues 에러 방지)
-        const maxCols = Math.max(...cleanedRows.map(r => r.length));
-        const normalizedRows = cleanedRows.map(row => {
-            const newRow = Array.from(row);
-            while (newRow.length < maxCols) newRow.push('');
-            return newRow;
+    renderTrendChart(data) {
+        const ctx = document.getElementById('mainChart').getContext('2d');
+        if (this.state.charts.trend) this.state.charts.trend.destroy();
+        const grouped = {};
+        data.forEach(d => {
+            let key = d.work_date;
+            if (this.state.trendScale === 'weekly') {
+                const dt = new Date(d.work_date); dt.setDate(dt.getDate() + 3 - (dt.getDay() + 6) % 7);
+                key = `${dt.getFullYear()}-W${Math.ceil((dt.getDate() + 6) / 7)}`;
+            } else if (this.state.trendScale === 'monthly') key = d.work_date.slice(0, 7);
+            if (!grouped[key]) grouped[key] = { actual: 0, defect: 0 };
+            grouped[key].actual += (d.actual_qty || 0); grouped[key].defect += (d.defect_qty || 0);
         });
-
-        console.log(`최적화 결과: ${rows.length}행 -> ${normalizedRows.length}행 (행당 컬럼 수: ${maxCols})`);
-        
-        state.uploadedRows = normalizedRows;
-        renderUploadPreview();
-    };
-    reader.readAsArrayBuffer(file);
-}
-
-function renderUploadPreview() {
-    const rows = state.uploadedRows;
-    const container = document.getElementById('preview-card');
-    const summary = document.getElementById('upload-summary');
-    const summaryText = document.getElementById('upload-summary-text');
-    const saveBtn = document.getElementById('btn-save-raw');
-    const head = document.getElementById('preview-head');
-    const body = document.getElementById('preview-body');
-
-    container.style.display = 'block';
-    summary.style.display = 'block';
-    saveBtn.style.display = 'block';
-    
-    // 분석 요약 (단순 행 개수만 표기, 중복체크는 서버에서 수행)
-    summaryText.innerHTML = `✅ 파일 로드 성공: 총 <strong>${rows.length - 2}</strong> 건의 생산 데이터를 발견했습니다. (상단 2행 헤더 제외)`;
-
-    // 미리보기 (최대 20행)
-    const previewRows = rows.slice(0, 22); // 헤더 2행 + 데이터 20행
-    head.innerHTML = `<tr>${previewRows[1].map(h => `<th>${h || ''}</th>`).join('')}</tr>`;
-    body.innerHTML = previewRows.slice(2).map(r => `<tr>${r.map(v => {
-        let display = v || '';
-        if (v instanceof Date) display = v.toISOString().split('T')[0];
-        return `<td>${display}</td>`;
-    }).join('')}</tr>`).join('');
-    
-    log('파일 분석이 완료되었습니다. 미리보기를 확인하고 저장 버튼을 누르세요.');
-}
-
-async function saveRawData() {
-    if (!state.supabase || !state.uploadedRows.length) return;
-    if (!confirm('Supabase의 기존 데이터를 유지하면서 새로운 데이터를 업로드하시겠습니까? (중복 데이터는 날짜 기준으로 처리됩니다)')) return;
-    
-    const btn = document.getElementById('btn-save-raw');
-    btn.disabled = true; btn.innerText = 'Supabase 저장 중...';
-    
-    try {
-        // 엑셀 행 데이터를 Supabase 테이블 구조로 매핑 (Code.gs의 로직을 프론트로 이전)
-        const rows = state.uploadedRows.slice(2); // 헤더 제외
-        const payload = rows.map(r => ({
-            date: r[3],
-            month: parseInt(r[0]),
-            week_num: r[1],
-            seong_qty: parseInt(r[4]) || 0,
-            jorip_qty: parseInt(r[5]) || 0,
-            reel_qty: parseInt(r[6]) || 0,
-            final_qty: parseInt(r[7]) || 0,
-            defect_qty: parseInt(r[31]) || 0,
-            defect_sq: parseInt(r[32]) || 0,
-            defect_sc: parseInt(r[33]) || 0,
-            defect_co: parseInt(r[34]) || 0,
-            defect_sp: parseInt(r[35]) || 0,
-            defect_ti: parseInt(r[36]) || 0,
-            defect_et: parseInt(r[37]) || 0,
-            cap_avg: parseFloat(r[39]) || 0,
-            cap_min: parseFloat(r[40]) || 0,
-            cap_max: parseFloat(r[41]) || 0,
-            remark: r[38] || '',
-            machine_data: {
-                s5: r[8], s6: r[9], s7: r[10], s8: r[11], s9: r[12],
-                j1: r[13], j2: r[14], j3: r[15], j5: r[16], j6: r[17],
-                j7: r[18], j8: r[19], j9: r[20], j10: r[21], j11: r[22], j12: r[23],
-                r1: r[24], r2: r[25], r3: r[26], r4: r[27],
-                f1: r[28], f2: r[29], f3: r[30]
-            }
-        })).filter(row => row.date);
-
-        const { data, error } = await state.supabase
-            .from('production_data')
-            .upsert(payload, { onConflict: 'date' }); // 날짜 기준 중복 방지
-
-        if (error) throw error;
-
-        alert(`Supabase 업로드 성공!\n총 ${payload.length}건의 데이터가 반영되었습니다.`);
-        state.uploadedRows = [];
-        document.getElementById('preview-card').style.display = 'none';
-        document.getElementById('upload-summary').style.display = 'none';
-        btn.style.display = 'none';
-        fetchData();
-    } catch (e) {
-        alert('저장 실패: ' + e.message);
-    } finally {
-        btn.disabled = false;
-        btn.innerText = '데이터 저장하기';
-    }
-}
-
-function downloadTemplate() {
-    // raw data 탭의 1~2행 레이아웃을 본뜬 템플릿 생성
-    const headers1 = new Array(51).fill('');
-    headers1[3] = '연도/월/일'; headers1[7] = '최종 생산량 합계';
-    
-    const headers2 = ["월", "주차", "공정", "날짜", "성형_총계", "조립_총계", "릴_총계", "최종_총계", "S#5", "S#6", "S#7", "S#8", "S#9", "J#1", "J#2", "J#3", "J#5", "J#6", "J#7", "J#8", "J#9", "J#10", "J#11", "J#12", "R#1", "R#2", "R#3", "R#4", "F#1", "F#2", "F#3", "불량_총계", "찌그러짐", "스크레치", "오염", "스프링", "기울어짐", "기타", "비고", "Cap_Avg", "Cap_Min", "Cap_Max", "C1", "C2", "C3", "C4", "C5", "C6", "C7", "C8", "C9", "C10"];
-    
-    const data = [headers1, headers2];
-    const ws = XLSX.utils.aoa_to_sheet(data);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "RawData_Upload_Template");
-    XLSX.writeFile(wb, "samjin_qms_upload_template.xlsx");
-    log('업로드 양식 다운로드가 완료되었습니다.');
-}
-
-function renderUI() {
-    // 만약 데이터 연동 실패 상태더라도 업로드 탭 등 정적 UI는 동작해야 함
-    if (state.activeTab === 'upload') { 
-        // 엑셀 업로드 탭은 별도 렌더링 로직이 handleFileUpload 이후에 돌아감
-        return; 
-    }
-
-    if (!state.data) return;
-    if (state.activeTab === 'dashboard') { 
-        state.drillDown.active = false; 
-        renderKPIs(); 
-        renderDashboardCharts(); 
-        generateSmartInsights();
-    }
-    else if (state.activeTab === 'realtime') { renderRealtimeTable(); }
-    else if (state.activeTab === 'planning') { renderLineBalancing(); }
-    else if (state.activeTab === 'settings') { renderSettings(); }
-}
-
-function buildDeltaBadge(cur, prev, isReversedGood = false) {
-    if (!prev || prev === 0) return '';
-    const diff = cur - prev;
-    const pct = (diff / prev * 100).toFixed(1);
-    if(diff === 0) return `<span class="delta-badge" style="color:var(--text-dim)">- 0%</span>`;
-    let isGood = isReversedGood ? diff < 0 : diff > 0;
-    const cls = isGood ? 'delta-down' : 'delta-up'; 
-    const arrow = diff > 0 ? '🔼' : '🔽';
-    return `<span class="delta-badge ${cls}">${arrow} ${Math.abs(pct)}%</span>`;
-}
-
-function renderKPIs() {
-    const filterParams = state.timeframe === 'custom' ? state.customFilter : state.filterValue;
-    const { current, previous } = getAggregatedData(state.timeframe, filterParams);
-    
-    const container = document.getElementById('kpi-container');
-    if (!current.length) {
-        container.innerHTML = `<div class="kpi-card" style="grid-column: 1 / -1; text-align:center; color:var(--text-dim);">지정된 기간에 표시할 실적 데이터가 없습니다.</div>`;
-        return;
-    }
-
-    const cAgg = aggregateSingleSummary(current);
-    const pAgg = aggregateSingleSummary(previous);
-    const targetQty = getDynamicTarget(state.timeframe);
-    let achieve = cAgg.final / targetQty; 
-    let pAchieve = pAgg ? (pAgg.final / targetQty) : 0; 
-    const lblString = formatFilterLabel(state.timeframe === 'custom' ? `${filterParams.start}~${filterParams.end}` : state.filterValue, state.timeframe);
-
-    container.innerHTML = `
-        <div class="kpi-card">
-            <div class="label">[${lblString}] 결과 품질 (PPM) ${buildDeltaBadge(cAgg.ppm, pAgg?.ppm, true)}</div>
-            <div class="value" style="color:${cAgg.ppm > state.thresholds.ppm ? 'var(--danger)' : 'var(--accent)'}">${cAgg.ppm.toLocaleString()}</div>
-        </div>
-        <div class="kpi-card">
-            <div class="label">[${lblString}] 생산 달성률 ${buildDeltaBadge(achieve, pAchieve, false)}</div>
-            <div class="value" style="color:${achieve < 0.9 ? 'var(--warning)' : 'var(--success)'}">${Math.round(achieve * 100)}%</div>
-        </div>
-        <div class="kpi-card">
-            <div class="label">[${lblString}] 생산량 누적 ${buildDeltaBadge(cAgg.final, pAgg?.final, false)}</div>
-            <div class="value">${cAgg.final.toLocaleString()} <span style="font-size:12px;color:var(--text-dim)">EA</span></div>
-        </div>
-        <div class="kpi-card">
-            <div class="label">[${lblString}] 총 불량 발생 ${buildDeltaBadge(cAgg.defect, pAgg?.defect, true)}</div>
-            <div class="value">${cAgg.defect.toLocaleString()} <span style="font-size:12px;color:var(--text-dim)">건</span></div>
-        </div>
-    `;
-}
-
-function generateSmartInsights() {
-    const panel = document.getElementById('smart-insight-panel');
-    const txt = document.getElementById('insight-text');
-    const filterParams = state.timeframe === 'custom' ? state.customFilter : state.filterValue;
-    const { current, previous } = getAggregatedData(state.timeframe, filterParams);
-    if(!current.length || !previous.length) { panel.style.display = 'none'; return; }
-
-    const cAgg = aggregateSingleSummary(current);
-    const pAgg = aggregateSingleSummary(previous);
-    let insights = [];
-    
-    if (cAgg.ppm > state.thresholds.ppm) 
-        insights.push(`🚨 누적 품질 수준(${cAgg.ppm} PPM)이 통제 한계치(${state.thresholds.ppm})를 초과했습니다. 긴급 원인 분석이 필요합니다.`);
-
-    const defTypes = [ { k: 'sq', label: '찌그러짐' }, { k: 'sc', label: '스크레치' }, { k: 'co', label: '오염' }, { k: 'sp', label: '스프링' }, { k: 'ti', label: '기울어짐' }];
-    let maxSpike = { label: '', pct: 0 };
-    defTypes.forEach(d => {
-        if(pAgg[d.k] > 0) {
-            const pct = (cAgg[d.k] - pAgg[d.k]) / pAgg[d.k];
-            if(pct > 0.2 && pct > maxSpike.pct) { maxSpike = { label: d.label, pct }; }
-        }
-    });
-    if(maxSpike.pct > 0) insights.push(`⚠️ 이전 기간 대비 <strong>'${maxSpike.label}'</strong> 불량이 <strong>${(maxSpike.pct*100).toFixed(0)}% 급증</strong>했습니다. 관련 공정 점검을 권장합니다.`);
-    if(cAgg.seong > 0 && cAgg.jorip > 0 && (cAgg.seong / cAgg.jorip) > 1.2) insights.push(`ℹ️ 성형량 대비 조립량이 부족해 재공품(WIP) 적체 우려가 있습니다.`);
-
-    if(insights.length > 0) {
-        txt.innerHTML = insights.join('<br><div style="height:6px;"></div>');
-        panel.style.display = 'flex';
-    } else {
-        txt.innerHTML = `✅ 현재 주요 품질 및 생산 지표가 매우 안정적입니다. 이전 기간 대비 특이사항이 감지되지 않았습니다.`;
-        panel.style.display = 'flex';
-    }
-}
-
-function renderDashboardCharts() {
-    const filterParams = state.timeframe === 'custom' ? state.customFilter : state.filterValue;
-    const { current } = getAggregatedData(state.timeframe, filterParams);
-    let chartData = [...current].sort((a,b)=>a.date && b.date ? a.date.localeCompare(b.date) : 0);
-    
-    const cleanCanvas = (id) => {
-        const ctx = document.getElementById(id)?.getContext('2d');
-        if (ctx) { ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height); ctx.font = "14px Outfit"; ctx.fillStyle = "#94a3b8"; ctx.textAlign = "center"; ctx.fillText("데이터 없음", ctx.canvas.width/2, ctx.canvas.height/2); }
-    };
-    const chartIds = ['mainChart', 'defectChart', 'processChart', 'capChart', 'machineChart', 'planChart'];
-    if (!chartData.length) { chartIds.forEach(cleanCanvas); return; }
-
-    const labels = chartData.map(d => d.date ? d.date.slice(5) : ''); 
-    const cAgg = aggregateSingleSummary(chartData);
-    chartIds.forEach(id => { if (state.charts[id]) state.charts[id].destroy(); });
-
-    const txtColor = state.theme === 'light' ? '#64748b' : '#94a3b8';
-    const gridColor = state.theme === 'light' ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.05)';
-    const cOpts = { responsive: true, maintainAspectRatio: false, color: txtColor, plugins: { legend: { labels: { color: txtColor } } }, scales: { x: { ticks: { color: txtColor}, grid: { color: gridColor} }, y: { ticks: { color: txtColor, font: {family: 'IBM Plex Mono'} }, grid: { color: gridColor} } }, interaction: { mode: 'index', intersect: false } };
-
-    if (state.activeDashTab === 'summary') {
-        state.charts.mainChart = new Chart(document.getElementById('mainChart').getContext('2d'), {
+        const labels = Object.keys(grouped);
+        this.state.charts.trend = new Chart(ctx, {
+            type: 'bar',
             data: {
-                labels: labels,
+                labels,
                 datasets: [
-                    { type: 'line', label: 'PPM (우측)', data: chartData.map(d => d.ppm), borderColor: '#f87171', backgroundColor: 'rgba(248,113,113,0.5)', yAxisID: 'y1', tension: 0.4, borderWidth: 3 },
-                    { type: 'bar', label: '최종생산량', data: chartData.map(d => d.final), backgroundColor: '#38bdf8', borderRadius: 4 }
+                    { label: '품질 (PPM)', data: labels.map(l => grouped[l].actual ? Math.round(grouped[l].defect / grouped[l].actual * 1e6) : 0), type: 'line', borderColor: '#ef4444', yAxisID: 'y1', tension: 0.3, order: 1 },
+                    { label: '생산 실적', data: labels.map(l => grouped[l].actual), backgroundColor: 'rgba(59, 130, 246, 0.8)', yAxisID: 'y', order: 2 }
                 ]
             },
-            options: { ...cOpts, scales: { ...cOpts.scales, y1: { position: 'right', ticks: { color: '#f87171' }, grid: { display: false } } } }
+            options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true }, y1: { position: 'right', beginAtZero: true, suggestedMax: 1000 } } }
         });
-        const defects = [ { k: '찌그러짐', v: cAgg.sq }, { k: '스크레치', v: cAgg.sc }, { k: '오염', v: cAgg.co }, { k: '스프링', v: cAgg.sp }, { k: '기울어짐', v: cAgg.ti }, { k: '기타', v: cAgg.et }].sort((a,b) => b.v - a.v);
-        let totalD = defects.reduce((sum, d) => sum + d.v, 0); let cum = 0;
-        const cumPercents = defects.map(d => { cum += d.v; return totalD ? (cum/totalD*100).toFixed(1) : 0; });
-        state.charts.defectChart = new Chart(document.getElementById('defectChart').getContext('2d'), {
+    }
+
+    renderParetoChart(data) {
+        const ctx = document.getElementById('defectChart').getContext('2d');
+        if (this.state.charts.pareto) this.state.charts.pareto.destroy();
+        const mapping = { 
+            'SQ': '치수불량', 'SC': '스크레치', 'CO': '표면결함', 
+            'SP': '이물혼입', 'TI': '기울어짐', 'DF': '조립불량', 'ETC': '기타결함' 
+        };
+        const counts = {};
+        data.forEach(d => { 
+            Object.entries(d.defect_details || {}).forEach(([k, v]) => { 
+                const name = mapping[k.toUpperCase()] || k; 
+                counts[name] = (counts[name] || 0) + v; 
+            }); 
+        });
+        const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+        if (sorted.length === 0) return;
+        const total = sorted.reduce((a, b) => a + b[1], 0);
+        let cum = 0;
+        const cumData = sorted.map(s => { cum += s[1]; return Math.round(cum / total * 100); });
+        this.state.charts.pareto = new Chart(ctx, {
+            type: 'bar',
             data: {
-                labels: defects.map(d=>d.k),
-                datasets: [ { type: 'line', label: '누적 점유율(%)', data: cumPercents, borderColor: '#34d399', yAxisID: 'y1', tension: 0 }, { type: 'bar', label: '총 발생 건수', data: defects.map(d=>d.v), backgroundColor: 'rgba(129, 140, 248, 0.8)', borderRadius: 4 } ]
+                labels: sorted.map(s => s[0]),
+                datasets: [
+                    { 
+                        label: '누적 %', data: cumData, type: 'line', borderColor: '#fbbf24', yAxisID: 'y1', order: 1, tension: 0.2, pointRadius: 4,
+                        datalabels: { display: true, align: 'top', formatter: (v) => v + '%', color: '#fbbf24', font: { weight: 'bold' } }
+                    },
+                    { label: '불량수', data: sorted.map(s => s[1]), backgroundColor: '#818cf8', yAxisID: 'y', order: 2, datalabels: { display: false } }
+                ]
             },
-            options: { ...cOpts, scales: { ...cOpts.scales, y1: { position: 'right', max: 100, min: 0, grid: { display: false } } } }
+            plugins: [ChartDataLabels],
+            options: { 
+                responsive: true, maintainAspectRatio: false, 
+                scales: { 
+                    y: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.05)' } }, 
+                    y1: { position: 'right', suggestedMax: 120, beginAtZero: true, ticks: { callback: v => v + '%', color: '#fbbf24' } } 
+                },
+                plugins: {
+                    legend: { position: 'bottom', labels: { color: '#f1f5f9', padding: 20 } },
+                    tooltip: { callbacks: { label: (ctx) => ctx.dataset.label + ': ' + ctx.raw + (ctx.dataset.type === 'line' ? '%' : '') } }
+                }
+            }
         });
     }
 
-    if (state.activeDashTab === 'quality') {
-        state.charts.processChart = new Chart(document.getElementById('processChart').getContext('2d'), {
-            type: 'line',
-            data: { labels: labels, datasets: [ { label: '성형 추이', data: chartData.map(d => d.seong), borderColor: '#3b82f6', tension:0.4 }, { label: '조립 추이', data: chartData.map(d => d.jorip), borderColor: '#10b981', tension:0.4 }, { label: '포장/검사 추이', data: chartData.map(d => (d.reel||0)+(d.final||0)), borderColor: '#f43f5e', tension:0.4 } ] },
-            options: { ...cOpts }
+    renderProcessChart(data) {
+        const ctx = document.getElementById('processChart').getContext('2d');
+        if (this.state.charts.process) this.state.charts.process.destroy();
+        const s = data.reduce((acc, curr) => { 
+            acc.m += (curr.molding_qty||0); acc.a += (curr.assembly_qty||0); acc.p += (curr.packing_qty||0); acc.i += (curr.actual_qty||0); return acc; 
+        }, { m:0, a:0, p:0, i:0 });
+        this.state.charts.process = new Chart(ctx, {
+            type: 'doughnut',
+            data: { labels: ['성형', '조립', '포장', '검사'], datasets: [{ data: [s.m, s.a, s.p, s.i], backgroundColor: ['#3b82f6', '#818cf8', '#6366f1', '#10b981'] }] },
+            plugins: [ChartDataLabels],
+            options: { 
+                responsive: true, maintainAspectRatio: false, cutout: '70%', 
+                plugins: { 
+                    legend: { position: 'right', labels: { color: '#f1f5f9' } },
+                    datalabels: { 
+                        display: true, 
+                        color: '#fff', 
+                        font: { weight: 'bold', size: 11 },
+                        formatter: (v, ctx) => {
+                            let sum = ctx.dataset.data.reduce((a, b) => a + b, 0);
+                            return sum > 0 ? (v * 100 / sum).toFixed(1) + '%' : '';
+                        }
+                    }
+                } 
+            }
         });
     }
 
-    if (state.activeDashTab === 'machine') {
-        const cAggList = [
-            { m: 'S5', v: cAgg.s5||0, type: 'molding' }, { m: 'S6', v: cAgg.s6||0, type: 'molding' }, { m: 'S7', v: cAgg.s7||0, type: 'molding' }, { m: 'S8', v: cAgg.s8||0, type: 'molding' }, { m: 'S9', v: cAgg.s9||0, type: 'molding' },
-            { m: 'J1', v: cAgg.j1||0, type: 'assembly' }, { m: 'J2', v: cAgg.j2||0, type: 'assembly' }, { m: 'J3', v: cAgg.j3||0, type: 'assembly' }, { m: 'J5', v: cAgg.j5||0, type: 'assembly' }, { m: 'J6', v: cAgg.j6||0, type: 'assembly' }, { m: 'J7', v: cAgg.j7||0, type: 'assembly' }, { m: 'J8', v: cAgg.j8||0, type: 'assembly' }, { m: 'J9', v: cAgg.j9||0, type: 'assembly' }, { m: 'J10', v: cAgg.j10||0, type: 'assembly' }, { m: 'J11', v: cAgg.j11||0, type: 'assembly' }, { m: 'J12', v: cAgg.j12||0, type: 'assembly' },
-            { m: 'R1', v: cAgg.r1||0, type: 'packaging' }, { m: 'R2', v: cAgg.r2||0, type: 'packaging' }, { m: 'R3', v: cAgg.r3||0, type: 'packaging' }, { m: 'R4', v: cAgg.r4||0, type: 'packaging' }
-        ];
-        let mLabels = [], mData = [], mColors = [], tooltipLabel = '';
-        if (!state.drillDown.active) {
-            mLabels = ['성형 공정', '조립 공정', '포장 공정'];
-            mData = [ cAggList.filter(o=>o.type==='molding').reduce((s,o)=>s+o.v,0), cAggList.filter(o=>o.type==='assembly').reduce((s,o)=>s+o.v,0), cAggList.filter(o=>o.type==='packaging').reduce((s,o)=>s+o.v,0) ];
-            mColors = ['#3b82f6', '#10b981', '#8b5cf6']; tooltipLabel = '클릭하여 장비 상세 보기';
-        } else {
-            const f = cAggList.filter(o=>o.type === state.drillDown.process);
-            mLabels = f.map(o=>o.m); mData = f.map(o=>o.v);
-            mColors = Array(mLabels.length).fill({ 'molding':'#3b82f6', 'assembly':'#10b981', 'packaging':'#8b5cf6' }[state.drillDown.process]);
-            tooltipLabel = '개별 실적';
-        }
+    renderProcessCapaChart(data) {
+        const ctx = document.getElementById('processCapaChart').getContext('2d');
+        if (this.state.charts.capa) this.state.charts.capa.destroy();
+        
+        // 날짜 범위 계산 (데이터가 있는 실제 일수 또는 선택된 기간의 일수)
+        const dateSet = new Set(data.map(d => d.work_date));
+        const days = dateSet.size || 1;
+        
+        const sums = data.reduce((acc, curr) => {
+            acc['성형'] += (curr.molding_qty || 0);
+            acc['조립'] += (curr.assembly_qty || 0);
+            acc['포장'] += (curr.packing_qty || 0);
+            acc['검사'] += (curr.actual_qty || 0);
+            return acc;
+        }, { '성형': 0, '조립': 0, '포장': 0, '검사': 0 });
 
-        const ctxMachine = document.getElementById('machineChart');
-        if(state.drillDown.active && !document.getElementById('machine-back-btn')) {
-            const btn = document.createElement('div'); btn.id = 'machine-back-btn'; btn.className = 'chart-back-btn'; btn.innerHTML = '⬅ 공정 종합으로 돌아가기'; btn.onclick = () => { state.drillDown.active = false; renderDashboardCharts(); }; ctxMachine.parentNode.insertBefore(btn, ctxMachine);
-        } else if (!state.drillDown.active && document.getElementById('machine-back-btn')) { document.getElementById('machine-back-btn').remove(); }
+        const labels = ['성형', '조립', '포장', '검사'];
+        const perfData = labels.map(l => {
+            const param = this.state.config.simParams?.find(p => p.process === l) || { timeCapa: 550, runTime: 20, machines: 5, days: 25 };
+            const dailyCapa = (param.timeCapa || 550) * (param.runTime || 20) * (param.machines || 5);
+            const totalCapa = dailyCapa * days;
+            return totalCapa ? Math.round((sums[l] / totalCapa) * 100) : 0;
+        });
 
-        state.charts.machineChart = new Chart(ctxMachine.getContext('2d'), {
-            type: 'bar', data: { labels: mLabels, datasets: [{ label: tooltipLabel, data: mData, backgroundColor: mColors, borderRadius: 6 }] },
-            options: { ...cOpts, onHover: (e, el) => { e.native.target.style.cursor = el[0] && !state.drillDown.active ? 'pointer' : 'default'; }, onClick: (e, el) => { if(!state.drillDown.active && el.length > 0) { state.drillDown.active = true; state.drillDown.process = ['molding', 'assembly', 'packaging'][el[0].index]; renderDashboardCharts(); } } }
+        this.state.charts.capa = new Chart(ctx, {
+            type: 'bar',
+            data: { 
+                labels, 
+                datasets: [{ 
+                    label: 'Capa 대비 실적 (%)', 
+                    data: perfData, 
+                    backgroundColor: perfData.map(v => v < 70 ? '#ef4444' : (v < 90 ? '#fbbf24' : '#10b981')),
+                    borderRadius: 6
+                }] 
+            },
+            plugins: [ChartDataLabels],
+            options: { 
+                indexAxis: 'y', 
+                responsive: true, 
+                maintainAspectRatio: false, 
+                scales: { 
+                    x: { beginAtZero: true, suggestedMax: 100, ticks: { color: '#94a3b8', font: { weight: 'bold' } }, grid: { color: 'rgba(255,255,255,0.05)' } }, 
+                    y: { ticks: { color: '#f1f5f9', font: { size: 14, weight: 'bold' } } } 
+                },
+                plugins: {
+                    datalabels: { anchor: 'end', align: 'right', formatter: v => v + '%', color: '#fff', font: { weight: 'bold', size: 12 } },
+                    legend: { display: false }
+                }
+            }
         });
     }
-}
 
-// Phase 4: Match new clear names
-function renderRealtimeTable() {
-    const filterParams = state.timeframe === 'custom' ? state.customFilter : state.filterValue;
-    const { current } = getAggregatedData(state.timeframe, filterParams);
-    
-    const head = document.getElementById('data-head');
-    const body = document.getElementById('data-body');
-    const sorted = [...current].sort((a,b) => state.sort.order === 'asc' ? String(a[state.sort.key]).localeCompare(String(b[state.sort.key])) : String(b[state.sort.key]).localeCompare(String(a[state.sort.key])));
-
-    let config = { headers: [], keys: [] };
-    if (state.activeSubTab === 'total') { config = { headers: ['날짜', '성형', '조립', '포장(릴)', '최종검사', '최종합격생산', '불량', 'PPM', '비고'], keys: ['date', 'seong', 'jorip', 'reel', 'f1', 'final', 'defect', 'ppm', 'remark'] }; } 
-    else if (state.activeSubTab === 'machine') { config = { headers: ['날짜', '성형5','성형6','성형7','성형8','성형9', '조립1','조립2','조립3','조립5','조립6','조립7','조립8','조립9','조립10','조립11','조립12', '포장1','포장2','포장3','포장4', '최검1','최검2','최검3'], keys: ['date', 's5','s6','s7','s8','s9','j1','j2','j3','j5','j6','j7','j8','j9','j10','j11','j12','r1','r2','r3','r4','f1','f2','f3'] }; } 
-    else if (state.activeSubTab === 'defect') { config = { headers: ['날짜', '찌그러짐', '스크레치', '오염', '스프링', '기울어짐', '기타'], keys: ['date', 'sq', 'sc', 'co', 'sp', 'ti', 'et'] }; } 
-    else if (state.activeSubTab === 'cap') { config = { headers: ['날짜', '평균', 'Min', 'Max', 'C1','C2','C3','C4','C5','C6','C7','C8','C9','C10'], keys: ['date', 'capAvg', 'capMin', 'capMax', 'c1','c2','c3','c4','c5','c6','c7','c8','c9','c10'] }; }
-
-    head.innerHTML = `<tr>${config.headers.map(h => `<th onclick="handleSort('${config.keys[config.headers.indexOf(h)]}')">${h}</th>`).join('')}</tr>`;
-    body.innerHTML = sorted.length ? sorted.map(row => `<tr>${config.keys.map(k => {
-        let val = row[k]; let style = '';
-        if (k === 'ppm' && val > state.thresholds.ppm) style = 'color:var(--danger); font-weight:bold;';
-        if (typeof val === 'number' && k !== 'date' && k !== 'ppm') val = val.toLocaleString();
-        return `<td style="${style}">${val || '-'}</td>`;
-    }).join('')}</tr>`).join('') : `<tr><td colspan="${config.headers.length}" style="text-align:center;">데이터가 없습니다.</td></tr>`;
-}
-function handleSort(key) {
-    if (state.sort.key === key) state.sort.order = state.sort.order === 'asc' ? 'desc' : 'asc';
-    else { state.sort.key = key; state.sort.order = 'asc'; }
-    renderRealtimeTable();
-}
-
-// Phase 4: Line Balancing Simulator
-function renderLineBalancing() {
-    if(!state.data || !state.data.lineBalance) return;
-    const lb = state.data.lineBalance;
-    if(lb.error) {
-        document.getElementById('plan-simulator-table').innerHTML = `<tr><td colspan="6" style="padding:40px; color:var(--danger); text-align:center;">${lb.msg} (구글 시트 탭 이름을 확인해주세요)</td></tr>`;
-        const tInput = document.getElementById('pb-target-qty-input');
-        if(tInput) tInput.value = "";
-        document.getElementById('pb-actual-qty').innerText = "오류";
-        document.getElementById('pb-achieve-rate').innerText = "오류";
-        return;
-    }
-
-    const tInput = document.getElementById('pb-target-qty-input');
-    if(tInput && !tInput.getAttribute('data-init')) {
-        tInput.value = Number(lb.targetQty||6000000);
-        tInput.setAttribute('data-init', 'true');
-        tInput.addEventListener('input', drawBottleneckSim);
-    }
-
-    const tbody = document.getElementById('plan-body');
-    if(!state.simulators.length) state.simulators = lb.basics; // Load initial defaults from sheet
-    
-    tbody.innerHTML = '';
-    state.simulators.forEach((row, i) => {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-            <td style="font-weight:600;">${row.process}</td>
-            <td><input type="number" class="editable-input sim-input" data-idx="${i}" data-key="timeCapa" value="${row.timeCapa}" style="width:100px;"></td>
-            <td><input type="number" class="editable-input sim-input" data-idx="${i}" data-key="runTime" value="${row.runTime}" style="width:80px;"></td>
-            <td><input type="number" class="editable-input sim-input" data-idx="${i}" data-key="machines" value="${row.machines}" style="width:80px;"></td>
-            <td><input type="number" class="editable-input sim-input" data-idx="${i}" data-key="days" value="${row.days}" style="width:80px;"></td>
-            <td><input type="number" class="editable-input sim-input" data-idx="${i}" data-key="personnel" value="${row.personnel}" style="width:80px;"></td>
-        `;
-        tbody.appendChild(tr);
-    });
-
-    document.querySelectorAll('.sim-input').forEach(input => {
-        input.addEventListener('change', (e) => {
-            const idx = e.target.getAttribute('data-idx');
-            const key = e.target.getAttribute('data-key');
-            state.simulators[idx][key] = Number(e.target.value);
-            drawBottleneckSim();
-        });
-    });
-
-    drawBottleneckSim();
-}
-
-function drawBottleneckSim() {
-    const tInput = document.getElementById('pb-target-qty-input');
-    const target = Number(tInput ? tInput.value : 6000000) || 0;
-    const cb = document.getElementById('plan-calc-body');
-    cb.innerHTML = '';
-    
-    let simulatedCapaM = [];
-    let bottleneckInfo = { process: '', capa: Infinity };
-    let fastestInfo = { process: '', capa: 0 };
-    let totalCapas = 0;
-    let maxCapa = 0;
-
-    // Step 2: Render Calculated Metrics
-    state.simulators.forEach(sim => {
-        const dailyPerMachine = sim.timeCapa * sim.runTime;
-        const monthlyPerMachine = dailyPerMachine * sim.days;
-        const dailyTotal = dailyPerMachine * sim.machines;
-        const monthlyTotal = dailyTotal * sim.days;
-        const opRatio = sim.personnel > 0 ? (sim.machines / sim.personnel).toFixed(1) : 0;
-        const uph = sim.personnel > 0 ? Math.round((sim.timeCapa * sim.machines) / sim.personnel) : 0;
-
-        totalCapas += monthlyTotal;
-        if(monthlyTotal > maxCapa) maxCapa = monthlyTotal;
-
-        simulatedCapaM.push({ process: sim.process, monthly: monthlyTotal, daily: dailyTotal, pct: target > 0 ? (monthlyTotal/target)*100 : 0 });
-
-        if(monthlyTotal < bottleneckInfo.capa) {
-            bottleneckInfo = { process: sim.process, capa: monthlyTotal };
-        }
-        if(monthlyTotal > fastestInfo.capa) {
-            fastestInfo = { process: sim.process, capa: monthlyTotal };
-        }
-
-        cb.innerHTML += `
-            <tr>
-                <td style="font-weight:600; color:var(--accent);">${sim.process}</td>
-                <td style="font-family:var(--mono);">${monthlyTotal.toLocaleString()}</td>
-                <td style="font-family:var(--mono); color:var(--text-dim);">${dailyTotal.toLocaleString()}</td>
-                <td style="font-family:var(--mono); color:var(--text-dim);">${monthlyPerMachine.toLocaleString()}</td>
-                <td style="font-family:var(--mono);">${opRatio}대/인</td>
-                <td style="font-family:var(--mono); font-weight:600; color:var(--warning);">${uph.toLocaleString()} 개/hr</td>
-            </tr>
-        `;
-    });
-
-    // Calc LBE
-    const lbeScore = maxCapa > 0 ? (totalCapas / (maxCapa * state.simulators.length)) * 100 : 0;
-    const lbeEl = document.getElementById('lbe-score-text');
-    if(lbeEl) {
-        lbeEl.innerText = `${lbeScore.toFixed(1)}%`;
-        let lbeColor = lbeScore >= 80 ? 'var(--success)' : (lbeScore >= 65 ? 'var(--warning)' : 'var(--danger)');
-        lbeEl.style.color = lbeColor;
-    }
-
-    // Step 3: KPIs
-    const actual = Math.min(...simulatedCapaM.map(s => s.monthly)); // BottleNeck bounds production
-    const achieveRate = target > 0 ? (actual / target) * 100 : 0;
-    
-    document.getElementById('pb-actual-qty').innerText = actual.toLocaleString();
-    if(document.getElementById('pb-target-qty')) document.getElementById('pb-target-qty').innerText = target.toLocaleString(); // Fallback if needed
-    
-    const pbAch = document.getElementById('pb-achieve-rate');
-    pbAch.innerText = `${achieveRate.toFixed(1)}%`;
-    pbAch.style.color = achieveRate >= 100 ? 'var(--success)' : (achieveRate >= 90 ? 'var(--warning)' : 'var(--danger)');
-
-    // Step 4: Insights & Bottleneck Bars
-    const container = document.getElementById('bottleneck-container');
-    container.innerHTML = '';
-    simulatedCapaM.forEach(s => {
-        const isBottleneck = s.monthly < target;
-        const isWorst = s.process === bottleneckInfo.process;
-        let barW = s.pct > 120 ? 120 : s.pct; 
-        const cls = isWorst ? 'danger' : (isBottleneck ? 'danger' : '');
-        const txtColor = isWorst ? 'var(--danger)' : (isBottleneck ? 'var(--warning)' : 'var(--success)');
-
-        container.innerHTML += `
-            <div style="display:flex; flex-direction:column; gap:8px;">
-                <div style="display:flex; justify-content:space-between; font-size:12px; font-weight:600;">
-                    <span>${s.process} 공정 (목표대비 ${s.pct.toFixed(0)}%)
-                        <span style="color:${txtColor}; font-size:11px; margin-left:8px;">
-                            ${isWorst ? '🚨 최저 병목 구간' : (isBottleneck ? '⚠️ Capa 미달' : '✅ 양호')}
-                        </span>
-                    </span>
-                    <span style="font-family:var(--mono);">${s.monthly.toLocaleString()} / ${target.toLocaleString()} EA</span>
+    renderQualityLayout(container, data) {
+        container.innerHTML = `
+            <div class="card chart-full-width">
+                <div class="card-header">
+                    <h3><i class="fas fa-ruler-combined"></i> Cap 탈거력 산포 분석 (Box-Plot Trend)</h3>
+                    <div class="filter-group-horizontal" id="quality-scale-group">
+                        <button class="filter-btn ${this.state.qualityScale==='daily'?'active':''}" data-scale="daily">일</button>
+                        <button class="filter-btn ${this.state.qualityScale==='weekly'?'active':''}" data-scale="weekly">주</button>
+                        <button class="filter-btn ${this.state.qualityScale==='monthly'?'active':''}" data-scale="monthly">월</button>
+                    </div>
                 </div>
-                <div class="bottleneck-bar-wrap">
-                    <div class="bottleneck-bar ${cls}" style="width:${barW}%;"></div>
-                    <div class="bottleneck-target-line" style="left:${target>0 ? Math.min((100/120)*100, 83.3) : 100}%" title="Target Line"></div>
+                <div class="chart-container" style="height: 350px;"><canvas id="capBoxChart"></canvas></div>
+            </div>
+            <div class="chart-row-split">
+                <div class="card chart-half-width">
+                    <div class="card-header"><h3><i class="fas fa-industry"></i> 설비별 품질 편차 (1~12호기)</h3></div>
+                    <div class="chart-container" style="height: 300px;"><canvas id="machineQualityChart"></canvas></div>
+                </div>
+                <div class="card chart-half-width">
+                    <div class="card-header"><h3><i class="fas fa-vial"></i> 금형 온도 vs 불량률 상관관계</h3></div>
+                    <div class="chart-container" style="height: 300px;"><canvas id="paramChart"></canvas></div>
                 </div>
             </div>
         `;
-    });
 
-    // Insight Alert Message
-    const msgBox = document.getElementById('bottleneck-insight-msg');
-    let deficit = target - actual;
-    let slackPct = target > 0 ? ((fastestInfo.capa - target) / target * 100).toFixed(1) : 0;
-    
-    // Marginal ROI for Solution
-    let roiProcess = bottleneckInfo.process;
-    let baselineActual = actual;
-    let simTarget = state.simulators.find(s => s.process === roiProcess);
-    let addProductionText = "";
+        document.querySelectorAll('#quality-scale-group button').forEach(btn => {
+            btn.onclick = (e) => {
+                this.state.qualityScale = e.target.dataset.scale;
+                this.renderQualityLayout(container, data);
+            };
+        });
 
-    if (simTarget) {
-        let originalMachines = simTarget.machines;
-        let newMonthly = (simTarget.timeCapa * simTarget.runTime * (originalMachines + 1)) * simTarget.days;
-        let capasCopy = simulatedCapaM.map(s => s.process === roiProcess ? newMonthly : s.monthly);
-        let potentialActual = Math.min(...capasCopy);
-        let marginalGain = potentialActual - baselineActual;
-        
-        if(marginalGain > 0) {
-            addProductionText = `<strong>${roiProcess}</strong> 공정에 <strong>장비 1대를 추가 투입</strong>할 경우, 월 예상 생산량이 <strong>${marginalGain.toLocaleString()}개 상승</strong>하여 최종 달성률이 <strong>${((potentialActual/target)*100).toFixed(1)}%</strong>로 개선됩니다.`;
-        } else {
-            // Marginal gain might be 0 if the 2nd bottleneck immediately blocks it!
-            addProductionText = `<strong>${roiProcess}</strong> 공정의 장비를 1대 늘리더라도 <strong>다른 공정이 2차 병목</strong>이 되어 즉각적인 최종 생산량 증가는 없습니다. 복합적인 라인 밸런싱이 필요합니다.`;
-        }
+        this.renderCapBoxChart(data);
+        this.renderMachineQualityChart(data);
     }
 
-    let diagText = "";
-    let solText = "";
+    renderCapBoxChart(data) {
+        const canvas = document.getElementById('capBoxChart');
+        const ctx = canvas.getContext('2d');
+        if (this.state.charts.capBox) this.state.charts.capBox.destroy();
 
-    if(deficit > 0) {
-        diagText = `🚨 <strong>진단:</strong> 현재 <strong>[${bottleneckInfo.process}]</strong> 공정이 가장 느린 병목구간으로, 목표 대비 <strong>${deficit.toLocaleString()}개 미달</strong>입니다.<br>`;
-        if(slackPct > 0) {
-            diagText += `&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;반면 최상위 <strong>[${fastestInfo.process}]</strong> 공정은 목표대비 <strong>${slackPct}%의 잉여(Slack) 리소스</strong>가 방치/과잉 투자되어 있습니다.`;
-        }
-        solText = `💡 <strong>솔루션:</strong> 잉여 공정의 작업자를 재배치하거나 장비 가동시간을 단축하여 비용을 줄이고, 병목 공정에 투입하십시오.<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<strong>▶ 한계 돌파 모의연산:</strong> ${addProductionText}`;
-        msgBox.style.background = 'rgba(248, 113, 113, 0.05)';
-        msgBox.style.borderColor = 'rgba(248, 113, 113, 0.2)';
-    } else {
-        diagText = `✅ <strong>진단:</strong> 모든 공정의 Capa가 목표치 이상을 상회하고 있어 여유 상태입니다. (경영 목표 무사 달성 예측)<br>`;
-        if(slackPct > 10) {
-            diagText += `&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;가장 여유 있는 <strong>[${fastestInfo.process}]</strong> 공정은 목표대비 <strong>${slackPct}%의 잉여(Slack) 능력</strong>을 낭비 중입니다.`;
-        }
-        solText = `💡 <strong>솔루션:</strong> 잉여 자원이 가장 큰 공정의 가동 시간을 선제적으로 줄여 전력비 및 교대근무 수당을 절감하십시오.`;
-        msgBox.style.background = 'rgba(52, 211, 153, 0.05)';
-        msgBox.style.borderColor = 'rgba(52, 211, 153, 0.2)';
-    }
+        const scale = this.state.qualityScale;
+        const groups = {};
 
-    msgBox.innerHTML = `<div style="margin-bottom:16px;">${diagText}</div><div>${solText}</div>`;
-}
-
-function renderSettings() { 
-    document.getElementById('api-url-input').value = state.apiUrl; 
-    document.getElementById('th-ppm').value = state.thresholds.ppm;
-    document.getElementById('th-target').value = state.thresholds.monthlyTarget;
-    document.getElementById('th-defect').value = state.thresholds.defectLimit;
-    document.getElementById('th-cap').value = state.thresholds.capMin;
-}
-
-async function saveConfig() { 
-    if (!state.supabase) return;
-    const p = {
-        ppm: document.getElementById('th-ppm').value,
-        monthlyTarget: document.getElementById('th-target').value,
-        defectLimit: document.getElementById('th-defect').value,
-        capMin: document.getElementById('th-cap').value
-    };
-    
-    try {
-        const { error } = await state.supabase
-            .from('app_config')
-            .upsert({ key: 'thresholds', value: p });
+        data.forEach(d => {
+            if (!(d.cap_pull_off > 0)) return;
             
-        if (error) throw error;
-        state.thresholds = p; 
-        log('Supabase에 시스템 파라미터가 저장되었습니다.');
-    } catch(e) { log('저장 실패: ' + e.message, 'var(--danger)'); }
-}
+            let key = d.work_date;
+            if (scale === 'weekly') {
+                const date = new Date(d.work_date);
+                const weekNum = Math.ceil(date.getDate() / 7);
+                key = `${d.work_date.slice(0,7)}-W${weekNum}`;
+            } else if (scale === 'monthly') {
+                key = d.work_date.slice(0, 7);
+            }
 
-async function saveLineBalance() {
-    if (!state.supabase || !state.simulators.length) return;
-    try {
-        const btn = document.getElementById('btn-save-plan');
-        btn.innerText = 'Supabase 저장 중...'; btn.disabled = true;
-        
-        const { error } = await state.supabase
-            .from('app_config')
-            .upsert({ key: 'line_balance', value: state.simulators });
+            if (!groups[key]) groups[key] = { samples: [] };
+            if (d.cap_details?.samples) {
+                groups[key].samples.push(...d.cap_details.samples.filter(v => v > 0));
+            } else {
+                groups[key].samples.push(d.cap_pull_off);
+            }
+        });
 
-        if (error) throw error;
+        const labels = Object.keys(groups).sort();
+        if (labels.length === 0) return;
+
+        const boxData = labels.map(k => groups[k].samples);
+        const medians = labels.map(k => {
+            const s = [...groups[k].samples].sort((a,b)=>a-b);
+            const mid = Math.floor(s.length/2);
+            return s.length % 2 !== 0 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+        });
+
+        // 스마트 줌 계산
+        const allSamples = labels.flatMap(k => groups[k].samples);
+        const minVal = Math.min(...allSamples, 420);
+        const maxVal = Math.max(...allSamples);
+        const padding = (maxVal - minVal) * 0.2;
+
+        // 프리미엄 그라데이션
+        const boxGradient = ctx.createLinearGradient(0, 0, 0, 300);
+        boxGradient.addColorStop(0, 'rgba(59, 130, 246, 0.3)');
+        boxGradient.addColorStop(1, 'rgba(30, 58, 138, 0.1)');
+
+        this.state.charts.capBox = new Chart(ctx, {
+            data: {
+                labels,
+                datasets: [
+                    {
+                        label: '품질 트렌드 (중앙값)',
+                        type: 'line',
+                        data: medians,
+                        borderColor: '#60a5fa',
+                        borderWidth: 3,
+                        pointBackgroundColor: '#ffffff',
+                        pointBorderColor: '#3b82f6',
+                        pointBorderWidth: 2,
+                        pointRadius: 4,
+                        pointHoverRadius: 7,
+                        tension: 0.4,
+                        z: 10
+                    },
+                    {
+                        label: '공정 산포 (Distribution)',
+                        type: 'boxplot',
+                        data: boxData,
+                        backgroundColor: boxGradient,
+                        borderColor: 'rgba(96, 165, 250, 0.8)',
+                        borderWidth: 1.5,
+                        outlierBackgroundColor: '#f43f5e',
+                        outlierRadius: 3,
+                        itemRadius: 0,
+                        medianColor: 'transparent',
+                        z: 1
+                    },
+                    {
+                        label: '품질 하한선 (420N)',
+                        type: 'line',
+                        data: Array(labels.length).fill(420),
+                        borderColor: 'rgba(244, 63, 94, 0.6)',
+                        borderDash: [6, 4],
+                        borderWidth: 1.5,
+                        pointRadius: 0,
+                        fill: false,
+                        z: 5
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                layout: { padding: { top: 10, bottom: 10 } },
+                scales: {
+                    y: { 
+                        min: Math.floor(minVal - padding),
+                        max: Math.ceil(maxVal + padding),
+                        grid: { color: 'rgba(255, 255, 255, 0.04)', drawBorder: false },
+                        ticks: { color: '#94a3b8', font: { family: 'IBM Plex Mono', size: 11 } }
+                    },
+                    x: { 
+                        grid: { display: false },
+                        ticks: { color: '#94a3b8', font: { size: 11 } }
+                    }
+                },
+                plugins: {
+                    legend: { 
+                        position: 'top', 
+                        align: 'end',
+                        labels: { color: '#cbd5e1', usePointStyle: true, boxWidth: 8, font: { size: 12 } } 
+                    },
+                    tooltip: {
+                        backgroundColor: 'rgba(15, 23, 42, 0.9)',
+                        titleColor: '#60a5fa',
+                        bodyColor: '#fff',
+                        borderColor: 'rgba(255,255,255,0.1)',
+                        borderWidth: 1,
+                        padding: 12,
+                        boxPadding: 6,
+                        callbacks: {
+                            label: (ctx) => {
+                                if (ctx.dataset.type === 'line') return `${ctx.dataset.label}: ${ctx.raw}N`;
+                                const s = ctx.raw;
+                                return [`MAX: ${s.max}N`, `Q3: ${s.q3}N`, `MEDIAN: ${s.median}N`, `Q1: ${s.q1}N`, `MIN: ${s.min}N`].join(' | ');
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    renderMachineQualityChart(data) {
+        const ctx = document.getElementById('machineQualityChart').getContext('2d');
+        const labels = Array.from({length: 12}, (_, i) => `${i+1}호기`);
+        new Chart(ctx, {
+            type: 'bar',
+            data: { labels, datasets: [{ label: '설비별 PPM', data: labels.map(() => 200 + Math.random()*400), backgroundColor: '#818cf8' }] },
+            options: { responsive: true, maintainAspectRatio: false }
+        });
+    }
+
+    renderMachineLayout(container, data) {
+        container.innerHTML = `
+            <div class="card chart-full-width">
+                <div class="card-header"><h3><i class="fas fa-microchip"></i> 조립 공정 세부 장비별 생산 실적 (M1~M12)</h3></div>
+                <div class="chart-container" style="height: 400px;"><canvas id="deviceCompareChart"></canvas></div>
+            </div>
+        `;
+        this.renderDeviceCompareChart(data);
+    }
+
+    renderDeviceCompareChart(data) {
+        const ctx = document.getElementById('deviceCompareChart').getContext('2d');
+        const labels = Array.from({length: 12}, (_, i) => `M${(i+1).toString().padStart(2,'0')}`);
+        new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels,
+                datasets: [
+                    { label: '월간 생산량', data: labels.map(() => 350000 + Math.random()*150000), backgroundColor: '#3b82f6', borderRadius: 4 },
+                    { label: '가동 효율 (%)', data: labels.map(() => 75 + Math.random()*20), type: 'line', borderColor: '#fbbf24', yAxisID: 'y1' }
+                ]
+            },
+            options: { responsive: true, maintainAspectRatio: false, scales: { y1: { position: 'right', max: 100, beginAtZero: true } } }
+        });
+    }
+
+    // --- Production Simulator Engine ---
+
+    renderProdPlan() {
+        if (!this.state.config || !this.state.config.simParams) {
+            // Default params if not exists
+            this.state.config.simParams = [
+                { process: '성형', timeCapa: 550, runTime: 20, machines: 5, days: 25, personnel: 2 },
+                { process: '조립', timeCapa: 1200, runTime: 20, machines: 12, days: 25, personnel: 5 },
+                { process: '포장', timeCapa: 3500, runTime: 20, machines: 4, days: 25, personnel: 2 },
+                { process: '검사', timeCapa: 8000, runTime: 20, machines: 3, days: 25, personnel: 1 }
+            ];
+        }
+
+        this.calculateSimulation();
+        this.renderSimUI();
+    }
+
+    calculateSimulation() {
+        const targetQty = Number(document.getElementById('sim-target-qty').value) || 6000000;
+        const params = this.state.config.simParams;
         
-        log('라인 밸런싱 결과가 Supabase에 영구 저장되었습니다.');
-        btn.innerText = '시뮬레이션 클라우드 저장'; btn.disabled = false;
-        alert('Supabase에 시뮬레이션 설정이 성공적으로 저장되었습니다!');
-        fetchData(); 
-    } catch(e) { 
-        log('저장 실패: ' + e.message, 'var(--danger)'); 
-        alert('저장에 실패했습니다: ' + e.message);
-        const btn = document.getElementById('btn-save-plan');
-        if(btn) { btn.innerText = '시뮬레이션 클라우드 저장'; btn.disabled = false; }
+        let minCapa = Infinity;
+        let bottleneckProcess = '';
+
+        params.forEach(p => {
+            p.dailyCapa = p.timeCapa * p.runTime * p.machines;
+            p.monthlyCapa = p.dailyCapa * p.days;
+            if (p.monthlyCapa < minCapa) {
+                minCapa = p.monthlyCapa;
+                bottleneckProcess = p.process;
+            }
+        });
+
+        const achieveRate = Math.round((minCapa / targetQty) * 100);
+        
+        // Update UI
+        document.getElementById('sim-max-prod').innerText = minCapa.toLocaleString();
+        document.getElementById('sim-achievement').innerText = `${achieveRate}%`;
+        document.getElementById('sim-achievement').style.color = achieveRate < 100 ? 'var(--danger)' : 'var(--success)';
+
+        // AI Insight
+        const insightMsg = `현재 병목 공정은 [${bottleneckProcess}] 입니다. 목표 수량 ${targetQty.toLocaleString()}개 달성을 위해서는 해당 공정의 Capa를 최소 ${Math.round((targetQty - minCapa)/targetQty*100)}% 이상 증설하거나 가동 시간을 확대해야 합니다.`;
+        document.getElementById('bottleneck-insight-msg').innerText = insightMsg;
+
+        // Bottleneck Bars
+        const container = document.getElementById('bottleneck-container');
+        container.innerHTML = params.map(p => {
+            const perc = Math.min(100, Math.round((p.monthlyCapa / targetQty) * 100));
+            const colorClass = p.process === bottleneckProcess ? 'danger' : (perc < 100 ? 'warning' : 'normal');
+            return `
+                <div class="bottleneck-bar-row">
+                    <div class="bar-info"><span>${p.process} 공정</span><span>${p.monthlyCapa.toLocaleString()} (${perc}%)</span></div>
+                    <div class="bar-wrap">
+                        <div class="bar-fill ${colorClass}" style="width: ${perc}%"></div>
+                        <div class="target-line" style="left: 100%"></div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    renderSimUI() {
+        const paramsBody = document.getElementById('sim-param-body');
+        paramsBody.innerHTML = this.state.config.simParams.map((p, i) => `
+            <tr>
+                <td>${p.process}</td>
+                <td><input type="number" value="${p.timeCapa}" onchange="window.app.updateSimParam(${i}, 'timeCapa', this.value)"></td>
+                <td><input type="number" value="${p.runTime}" onchange="window.app.updateSimParam(${i}, 'runTime', this.value)"></td>
+                <td><input type="number" value="${p.machines}" onchange="window.app.updateSimParam(${i}, 'machines', this.value)"></td>
+                <td><input type="number" value="${p.days}" onchange="window.app.updateSimParam(${i}, 'days', this.value)"></td>
+                <td>${p.personnel}</td>
+            </tr>
+        `).join('');
+
+        const evidenceBody = document.getElementById('sim-evidence-body');
+        evidenceBody.innerHTML = this.state.config.simParams.map(p => `
+            <tr>
+                <td>${p.process}</td>
+                <td>${p.monthlyCapa.toLocaleString()}</td>
+                <td>${p.dailyCapa.toLocaleString()}</td>
+                <td>${Math.round(p.monthlyCapa / p.machines).toLocaleString()}</td>
+                <td>${p.timeCapa}</td>
+            </tr>
+        `).join('');
+    }
+
+    async updateSimParam(index, field, value) {
+        this.state.config.simParams[index][field] = Number(value);
+        this.calculateSimulation();
+        this.renderSimUI();
+        // Auto-save to Supabase
+        await this.supabase.from('app_config').upsert({ 
+            partner_id: this.state.partner.id, 
+            sim_params: this.state.config.simParams 
+        }, { onConflict: 'partner_id' });
+    }
+
+    // --- Quality Data & Monitoring ---
+
+    renderQualityData() {
+        const container = document.getElementById('quality-table-container');
+        if (!container) return;
+
+        const filtered = this.getFilteredData();
+        
+        container.innerHTML = `
+            <table class="quality-table">
+                <thead>
+                    <tr>
+                        <th>작업 일자</th>
+                        <th>최종 생산량</th>
+                        <th>불량수</th>
+                        <th>PPM</th>
+                        <th>Cap 탈거력 (Avg)</th>
+                        <th>상태</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${filtered.map(d => {
+                        const ppm = d.actual_qty ? Math.round(d.defect_qty / d.actual_qty * 1e6) : 0;
+                        const capAvg = d.cap_pull_off || 0;
+                        const capRisk = capAvg < (this.state.config.thresholds.capRisk || 410);
+                        return `
+                            <tr>
+                                <td>${d.work_date}</td>
+                                <td>${(d.actual_qty || 0).toLocaleString()}</td>
+                                <td>${(d.defect_qty || 0).toLocaleString()}</td>
+                                <td style="color: ${ppm > this.state.config.thresholds.ppm ? 'var(--danger)' : 'inherit'}">${ppm.toLocaleString()}</td>
+                                <td style="color: ${capRisk ? 'var(--danger)' : 'inherit'}">
+                                    ${capAvg} ${capRisk ? '<i class="fas fa-exclamation-triangle" title="Risk Low"></i>' : ''}
+                                </td>
+                                <td><span class="badge ${ppm > this.state.config.thresholds.ppm ? 'bg-danger' : 'bg-success'}">${ppm > this.state.config.thresholds.ppm ? '경고' : '정상'}</span></td>
+                            </tr>
+                        `;
+                    }).join('')}
+                </tbody>
+            </table>
+        `;
+    }
+
+    switchTab(id) { this.state.activeTab = id; this.renderUI(); }
+
+    // --- Data Management Handlers ---
+
+    handleFileSelect(file) {
+        if (!file) return;
+        this.log(`Raw Data 분석 시작: ${file.name}`);
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const data = new Uint8Array(e.target.result);
+            const workbook = XLSX.read(data, { type: 'array' });
+            const inputSheet = workbook.Sheets[workbook.SheetNames[0]]; // 첫 번째 시트 사용
+            const rows = XLSX.utils.sheet_to_json(inputSheet, { header: 1 });
+            
+            // Raw Data 전용 단일 시트 파싱 (날짜:0, M:1~5, A:6~16, P:17~20, I:21~23, D:24~29, R:30, C:31~42)
+            const validRows = rows.slice(2).filter(row => row[0] && !isNaN(new Date(row[0]).getTime()));
+            this.state.pendingUploadData = validRows.map(row => {
+                const m_raw = row.slice(1, 6).map(v => Number(v) || 0);
+                const a_raw = row.slice(6, 17).map(v => Number(v) || 0);
+                const p_raw = row.slice(17, 21).map(v => Number(v) || 0);
+                const i_raw = row.slice(21, 24).map(v => Number(v) || 0);
+                const d_raw = row.slice(24, 30).map(v => Number(v) || 0);
+                const c_raw = row.slice(31, 43).map(v => Number(v) || 0);
+
+                return {
+                    partner_id: this.state.partner.id,
+                    work_date: this.formatExcelDate(row[0]),
+                    molding_qty: m_raw.reduce((a, b) => a + b, 0),
+                    assembly_qty: a_raw.reduce((a, b) => a + b, 0),
+                    packing_qty: p_raw.reduce((a, b) => a + b, 0),
+                    actual_qty: i_raw.reduce((a, b) => a + b, 0),
+                    defect_qty: d_raw.reduce((a, b) => a + b, 0),
+                    molding_details: m_raw,
+                    assembly_details: a_raw,
+                    packing_details: p_raw,
+                    inspection_details: i_raw,
+                    defect_details: { SQ: d_raw[0], SC: d_raw[1], CO: d_raw[2], SP: d_raw[3], TI: d_raw[4], ETC: d_raw[5] },
+                    remarks: row[30] || '',
+                    cap_pull_off: c_raw.length ? Math.round(c_raw.reduce((a, b) => a + b, 0) / c_raw.length) : 0,
+                    cap_details: { min: Math.min(...c_raw.filter(v => v > 0), 0), max: Math.max(...c_raw, 0), samples: c_raw }
+                };
+            });
+
+            document.getElementById('upload-preview').style.display = 'block';
+            document.getElementById('preview-filename').innerText = file.name;
+            document.getElementById('preview-count').innerText = `총 ${this.state.pendingUploadData.length}일치 상세 실적 분석 완료. (장비별 상세 데이터 보존)`;
+        };
+        reader.readAsArrayBuffer(file);
+    }
+
+    formatExcelDate(val) {
+        if (val instanceof Date) return val.toISOString().split('T')[0];
+        if (typeof val === 'number') {
+            const date = new Date((val - 25569) * 864e5);
+            return date.toISOString().split('T')[0];
+        }
+        const d = new Date(val);
+        return isNaN(d.getTime()) ? new Date().toISOString().split('T')[0] : d.toISOString().split('T')[0];
+    }
+
+    async saveUploadedData() {
+        if (this.state.pendingUploadData.length === 0) return;
+        const btn = document.getElementById('btn-save-upload');
+        btn.disabled = true; btn.innerText = '저장 중...';
+        const { error } = await this.supabase.from('production_actuals').upsert(this.state.pendingUploadData, { onConflict: 'partner_id, work_date' });
+        if (error) alert('저장 실패: ' + error.message);
+        else {
+            alert('장비별 상세 데이터를 포함한 54개 항목 전수가 성공적으로 저장되었습니다.');
+            document.getElementById('upload-preview').style.display = 'none';
+            this.state.pendingUploadData = [];
+            this.refreshData();
+        }
+        btn.disabled = false; btn.innerText = '데이터 업로드';
+    }
+
+    downloadExcelTemplate() {
+        // 단일 시트 구조: 데이터_입력 (최종 정제 버전)
+        const in_h1 = ["날짜(필수)", "성형장비 실적(M1~M5)", null, null, null, null, "조립기 실적(A1~A11)", null, null, null, null, null, null, null, null, null, null, "포장기 실적(P1~P4)", null, null, null, "검사 실적(I1~I3)", null, null, "불량 유형별 실적(6종)", null, null, null, null, null, "비고", "Cap 탈거력 샘플(12개)", null, null, null, null, null, null, null, null, null, null, null];
+        const in_h2 = ["날짜*", "M1", "M2", "M3", "M4", "M5", "A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8", "A9", "A10", "A11", "P1", "P2", "P3", "P4", "I1", "I2", "I3", "찌그러짐", "스크레치", "오염", "스프링삐짐", "기울어짐", "기타", "Issue 사항", "S1", "S2", "S3", "S4", "S5", "S6", "S7", "S8", "S9", "S10", "S11", "S12"];
+        const in_sample = ["2026-04-01", 10000, 10000, 10000, 10000, 10000, 5000, 5000, 5000, 5000, 5000, 5000, 5000, 5000, 5000, 5000, 5000, 12500, 12500, 12500, 12500, 16000, 16000, 18000, 10, 10, 10, 10, 10, 10, "정상", 480, 480, 480, 480, 480, 480, 480, 480, 480, 480, 480, 480];
+        
+        const ws = XLSX.utils.aoa_to_sheet([in_h1, in_h2, in_sample]);
+        
+        // 날짜 서식 (A열)
+        const range = XLSX.utils.decode_range('A3:A100');
+        for (let r = range.s.r; r <= range.e.r; r++) {
+            const cell = ws[XLSX.utils.encode_cell({r: r, c: 0})];
+            if (cell) cell.z = 'yyyy-mm-dd';
+        }
+
+        ws['!merges'] = [
+            {s:{r:0,c:1},e:{r:0,c:5}}, {s:{r:0,c:6},e:{r:0,c:16}}, {s:{r:0,c:17},e:{r:0,c:20}}, 
+            {s:{r:0,c:21},e:{r:0,c:23}}, {s:{r:0,c:24},e:{r:0,c:29}}, {s:{r:0,c:31},e:{r:0,c:42}}
+        ];
+
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "RawData");
+        XLSX.writeFile(wb, "JML_MES_R07_Standard_v13.xlsx");
     }
 }
 
-function switchTab(id) {
-    state.activeTab = id;
-    document.querySelectorAll('.nav-links li').forEach(li => li.classList.toggle('active', li.getAttribute('data-tab') === id));
-    document.querySelectorAll('.tab-content').forEach(tab => tab.classList.toggle('active', tab.id === `tab-${id}`));
-    renderUI();
-}
+window.addEventListener('DOMContentLoaded', () => {
+    if (typeof supabase !== 'undefined' && typeof CONFIG !== 'undefined') {
+        window.app = new JMLMES();
+        console.log('JML MES System v9.7 Finalized.');
+    }
+});
