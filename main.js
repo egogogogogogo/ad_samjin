@@ -227,13 +227,13 @@ class JMLMES {
         document.querySelectorAll('.nav-links li').forEach(li => li.classList.toggle('active', li.dataset.tab === tab));
         
         if (tab === 'dashboard') {
-            document.getElementById('page-title').innerText = 'JML MES Executive Dashboard';
+            document.getElementById('page-title').innerHTML = 'Executive Dashboard <small style="font-size: 0.65rem; opacity: 0.6;">(v10.6 Stable)</small>';
             this.renderDashboard();
         } else if (tab === 'prod-plan') {
-            document.getElementById('page-title').innerText = 'JML MES Production Simulator';
+            document.getElementById('page-title').innerText = 'Production Simulator';
             this.renderProdPlan();
         } else if (tab === 'quality-data') {
-            document.getElementById('page-title').innerText = 'JML MES Quality Monitoring';
+            document.getElementById('page-title').innerText = 'Quality Monitoring';
             this.renderQualityData();
         }
     }
@@ -287,18 +287,26 @@ class JMLMES {
     renderAIInsight(data) {
         const sub = this.state.activeSubTab;
         let msg = "";
-        const s = data.reduce((acc, curr) => { acc.actual += (curr.actual_qty || 0); acc.target += (curr.target_qty || 0); acc.defect += (curr.defect_qty || 0); return acc; }, { actual: 0, target: 0, defect: 0 });
+        const s = data.reduce((acc, curr) => {
+            acc.actual += (curr.actual_qty || 0);
+            acc.defect += (curr.defect_qty || 0);
+            acc.molding += (curr.molding_qty || 0);
+            acc.assembly += (curr.assembly_qty || 0);
+            return acc;
+        }, { actual: 0, defect: 0, molding: 0, assembly: 0 });
         const ppm = s.actual ? Math.round((s.defect / s.actual) * 1e6) : 0;
 
         if (sub === 'total') {
-            const topProcess = [...this.state.config.simParams].sort((a, b) => (b.actual_qty / b.dailyCapa) - (a.actual_qty / a.dailyCapa))[0];
-            const loadRate = Math.round((topProcess.actual_qty / topProcess.dailyCapa) * 100);
+            const moldingLoad = Math.round((s.molding / (this.state.config.simParams[0].dailyCapa * (data.length || 1))) * 100);
+            const assemblyLoad = Math.round((s.assembly / (this.state.config.simParams[1].dailyCapa * (data.length || 1))) * 100);
             
-            msg = `종합 분석: 현재 PPM(${ppm.toLocaleString()})이 목표치(${this.state.config.thresholds.ppm}) 대비 ${ppm > this.state.config.thresholds.ppm ? '초과' : '안정'} 상태입니다. `;
-            if (ppm > this.state.config.thresholds.ppm) {
-                msg += `최근 성형 7호기의 산포 급증이 관찰되었습니다. `;
+            msg = `종합 분석: 현재 PPM(${ppm.toLocaleString()})이 목표치 대비 ${ppm > 500 ? '초과' : '안정'} 상태입니다. `;
+            if (moldingLoad > assemblyLoad) {
+                msg += `특히 성형 공정 부하율이 ${moldingLoad}%로 가장 높으며, 병목 해소가 시급합니다. `;
+            } else {
+                msg += `조립 공정 부하율(${assemblyLoad}%) 관리가 필요합니다. `;
             }
-            msg += `현재 ${topProcess.process} 공정 부하율이 ${loadRate}%로 가장 높으므로, 해당 라인의 병목 해소와 설비 예방 보전이 우선적으로 필요합니다.`;
+            if (ppm > 500) msg += `최근 성형 7호기 부근의 산포 급증을 점검하십시오.`;
         } else if (sub === 'quality') {
             msg = `품질 분석: Cap 탈거력의 평균 수치가 ${ppm > 500 ? '하락' : '안정'}세에 있으며, 특히 성형 온도가 높은 야간 시간대에 산포가 벌어지는 경향이 있습니다. CPK 1.33 확보를 위한 실시간 모니터링이 시급합니다.`;
         } else if (sub === 'machine') {
