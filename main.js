@@ -287,6 +287,10 @@ class JMLMES {
     renderAIInsight(data) {
         const sub = this.state.activeSubTab;
         let msg = "";
+        if (!data || data.length === 0) {
+            document.getElementById('ai-insight-text').innerText = "분석할 데이터가 없습니다. Raw Data를 업로드해 주세요.";
+            return;
+        }
         const s = data.reduce((acc, curr) => {
             acc.actual += (curr.actual_qty || 0);
             acc.defect += (curr.defect_qty || 0);
@@ -396,7 +400,7 @@ class JMLMES {
         };
         const counts = {};
         data.forEach(d => { 
-            Object.entries(d.defect_details || {}).forEach(([k, v]) => { 
+            Object.entries(d.defect_detail || {}).forEach(([k, v]) => { 
                 const name = mapping[k.toUpperCase()] || k; 
                 counts[name] = (counts[name] || 0) + v; 
             }); 
@@ -585,10 +589,10 @@ class JMLMES {
             }
 
             if (!groups[key]) groups[key] = { samples: [] };
-            if (d.cap_details?.samples) {
-                groups[key].samples.push(...d.cap_details.samples.filter(v => v > 0));
+            if (d.quality_samples && Array.isArray(d.quality_samples)) {
+                groups[key].samples.push(...d.quality_samples.filter(v => v > 0));
             } else {
-                groups[key].samples.push(d.cap_pull_off);
+                groups[key].samples.push(d.cap_pull_off || 0);
             }
         });
 
@@ -705,20 +709,30 @@ class JMLMES {
         if (this.state.charts.machineQuality) this.state.charts.machineQuality.destroy();
 
         const process = this.state.machineQualityProcess;
-        // 실제 데이터에서 설비별 필드가 있다면 매핑, 현재는 공정별 특성을 살린 더미 데이터 생성
-        const machineCount = process === '조립' ? 12 : (process === '성형' ? 8 : 4);
-        const labels = Array.from({length: machineCount}, (_, i) => `${i+1}호기`);
+        const mapping = { '성형': 'molding', '조립': 'assembly', '포장': 'packing', '검사': 'inspection' };
+        const key = mapping[process];
         
-        // 공정별 기본 PPM 베이스라인 설정 (성형은 낮고, 조립은 다소 높은 특성 반영)
-        const basePPM = { '성형': 150, '조립': 450, '포장': 50, '검사': 100 }[process];
+        // 장비 대수 정의 (사용자 제공 기준)
+        const counts = { '성형': 5, '조립': 12, '포장': 4, '검사': 3 };
+        const machineCount = counts[process] || 5;
+        const labels = Array.from({length: machineCount}, (_, i) => `${process.slice(0,1)}${i+1}`);
+
+        // 실제 데이터 합산
+        const machineSums = Array(machineCount).fill(0);
+        data.forEach(d => {
+            const details = d.machine_data?.[key] || [];
+            details.forEach((val, idx) => {
+                if (idx < machineCount) machineSums[idx] += (val || 0);
+            });
+        });
 
         this.state.charts.machineQuality = new Chart(ctx, {
             type: 'bar',
             data: { 
                 labels, 
                 datasets: [{ 
-                    label: `${process} 공정 설비별 PPM`, 
-                    data: labels.map(() => basePPM + Math.random() * (basePPM * 0.5)), 
+                    label: `${process} 설비별 누적 실적`, 
+                    data: machineSums, 
                     backgroundColor: process === '조립' ? '#818cf8' : (process === '성형' ? '#3b82f6' : '#10b981'),
                     borderRadius: 4
                 }] 
