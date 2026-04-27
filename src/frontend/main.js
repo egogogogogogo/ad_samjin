@@ -873,10 +873,11 @@ class JMLMES {
                 <thead>
                     <tr>
                         <th>작업 일자</th>
-                        <th>최종 생산량</th>
-                        <th>불량수</th>
-                        <th>PPM</th>
-                        <th>Cap 탈거력 (Avg)</th>
+                        <th>성형 실적</th>
+                        <th>조립 실적</th>
+                        <th>최종(검사)</th>
+                        <th>불량(PPM)</th>
+                        <th>Cap 탈거력</th>
                         <th>상태</th>
                     </tr>
                 </thead>
@@ -884,17 +885,16 @@ class JMLMES {
                     ${filtered.map(d => {
                         const ppm = d.actual_qty ? Math.round(d.defect_qty / d.actual_qty * 1e6) : 0;
                         const capAvg = d.cap_pull_off || 0;
-                        const capRisk = capAvg < (this.state.config.thresholds.capRisk || 410);
+                        const statusClass = ppm > 500 || capAvg < 410 ? 'bg-danger' : 'bg-success';
                         return `
                             <tr>
                                 <td>${d.work_date}</td>
+                                <td>${(d.molding_qty || 0).toLocaleString()}</td>
+                                <td>${(d.assembly_qty || 0).toLocaleString()}</td>
                                 <td>${(d.actual_qty || 0).toLocaleString()}</td>
-                                <td>${(d.defect_qty || 0).toLocaleString()}</td>
-                                <td style="color: ${ppm > this.state.config.thresholds.ppm ? 'var(--danger)' : 'inherit'}">${ppm.toLocaleString()}</td>
-                                <td style="color: ${capRisk ? 'var(--danger)' : 'inherit'}">
-                                    ${capAvg} ${capRisk ? '<i class="fas fa-exclamation-triangle" title="Risk Low"></i>' : ''}
-                                </td>
-                                <td><span class="badge ${ppm > this.state.config.thresholds.ppm ? 'bg-danger' : 'bg-success'}">${ppm > this.state.config.thresholds.ppm ? '경고' : '정상'}</span></td>
+                                <td style="color: ${ppm > 500 ? 'var(--danger)' : 'inherit'}">${ppm.toLocaleString()}</td>
+                                <td>${capAvg}</td>
+                                <td><span class="badge ${statusClass}">${ppm > 500 ? 'Issue' : '정상'}</span></td>
                             </tr>
                         `;
                     }).join('')}
@@ -957,7 +957,14 @@ class JMLMES {
 
             document.getElementById('upload-preview').style.display = 'block';
             document.getElementById('preview-filename').innerText = file.name;
-            document.getElementById('preview-count').innerText = `총 ${this.state.pendingUploadData.length}일치 상세 실적 분석 완료. (장비별 상세 데이터 보존)`;
+            document.getElementById('preview-count').innerHTML = `
+                <div style="text-align: left; margin-top: 10px;">
+                    <p>✅ 분석 기간: ${this.state.pendingUploadData.length}일치</p>
+                    <p>✅ 분석 항목: 성형(5대), 조립(11대), 포장(4대), 검사(3대)</p>
+                    <p>✅ 품질 데이터: 불량 6종 및 Cap 탈거력 샘플링 완료</p>
+                    <p style="color: var(--accent); margin-top: 5px;">※ 위 항목들이 상세 필드(JSONB)로 저장됩니다.</p>
+                </div>
+            `;
         };
         reader.readAsArrayBuffer(file);
     }
