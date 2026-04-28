@@ -634,22 +634,50 @@ class JMLMES {
 
         const scale = this.state.qualityScale;
         const mode = this.state.dateMode;
-        const year = this.state.selectedDate;
+        const selected = this.state.selectedDate;
         const groups = {};
 
-        // 1. 라벨 사전 생성 (연간 뷰인 경우 1년 전체 확보)
+        // 1. 라벨 사전 생성 (모든 모드에서 전체 기간 확보)
         let labels = [];
         if (mode === 'yearly') {
+            const year = selected;
             if (scale === 'monthly') {
                 for (let i = 1; i <= 12; i++) labels.push(`${year}-${i.toString().padStart(2, '0')}`);
             } else if (scale === 'weekly') {
                 for (let i = 1; i <= 52; i++) labels.push(`${year}-W${i.toString().padStart(2, '0')}`);
             } else if (scale === 'daily') {
-                // 연간 일간 뷰는 너무 많으므로 현재 월 기준 혹은 데이터 범위 기준 (일단 1년치 생성 시도하되 가독성 고려)
-                const start = new Date(year, 0, 1);
-                const end = new Date(year, 11, 31);
-                for (let d = start; d <= end; d.setDate(d.getDate() + 1)) {
+                for (let m = 0; m < 12; m++) {
+                    const lastDay = new Date(year, m + 1, 0).getDate();
+                    for (let d = 1; d <= lastDay; d++) labels.push(`${year}-${(m + 1).toString().padStart(2, '0')}-${d.toString().padStart(2, '0')}`);
+                }
+            }
+        } else if (mode === 'monthly') {
+            const [y, m] = selected.split('-').map(Number);
+            const lastDay = new Date(y, m, 0).getDate();
+            if (scale === 'daily') {
+                for (let d = 1; d <= lastDay; d++) labels.push(`${y}-${m.toString().padStart(2, '0')}-${d.toString().padStart(2, '0')}`);
+            } else if (scale === 'weekly') {
+                const startWeek = this.getISOWeek(new Date(y, m - 1, 1));
+                const endWeek = this.getISOWeek(new Date(y, m - 1, lastDay));
+                // 월에 걸쳐 있는 주차들 생성 (연도가 바뀔 수 있음 주의)
+                let curr = new Date(y, m - 1, 1);
+                curr.setDate(curr.getDate() + (1 - curr.getDay())); // 해당 주의 월요일
+                while (curr <= new Date(y, m - 1, lastDay) || this.getISOWeekString(curr) === this.getISOWeekString(new Date(y, m - 1, lastDay))) {
+                    const ws = this.getISOWeekString(curr);
+                    if (!labels.includes(ws)) labels.push(ws);
+                    curr.setDate(curr.getDate() + 7);
+                }
+            }
+        } else if (mode === 'weekly') {
+            if (scale === 'daily') {
+                const [y, wStr] = selected.split('-W');
+                const year = Number(y);
+                const week = Number(wStr);
+                const d = new Date(year, 0, 4);
+                d.setDate(d.getDate() + (week - 1) * 7 - (d.getDay() + 6) % 7); // 해당 주차 월요일
+                for (let i = 0; i < 7; i++) {
                     labels.push(d.toISOString().split('T')[0]);
+                    d.setDate(d.getDate() + 1);
                 }
             }
         }
