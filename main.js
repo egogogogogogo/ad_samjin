@@ -589,23 +589,25 @@ class JMLMES {
                 </div>
                 <div class="chart-container" style="height: 350px;"><canvas id="capBoxChart"></canvas></div>
             </div>
-            <div class="chart-row-split">
-                <div class="card chart-half-width">
-                    <div class="card-header">
-                        <h3><i class="fas fa-industry"></i> 설비별 품질 편차</h3>
-                        <div class="filter-group-horizontal" id="machine-process-toggle">
-                            <button class="filter-btn ${this.state.machineQualityProcess==='성형'?'active':''}" data-proc="성형">성형</button>
-                            <button class="filter-btn ${this.state.machineQualityProcess==='조립'?'active':''}" data-proc="조립">조립</button>
-                            <button class="filter-btn ${this.state.machineQualityProcess==='포장'?'active':''}" data-proc="포장">포장</button>
-                            <button class="filter-btn ${this.state.machineQualityProcess==='검사'?'active':''}" data-proc="검사">검사</button>
-                        </div>
+            
+            <div class="card chart-full-width mt-15">
+                <div class="card-header">
+                    <h3><i class="fas fa-bolt"></i> 설비별 가동 효율 분석 (Utility Rate %)</h3>
+                    <div class="filter-group-horizontal" id="machine-efficiency-toggle">
+                        <button class="filter-btn ${this.state.machineQualityProcess==='성형'?'active':''}" data-proc="성형">성형</button>
+                        <button class="filter-btn ${this.state.machineQualityProcess==='조립'?'active':''}" data-proc="조립">조립</button>
+                        <button class="filter-btn ${this.state.machineQualityProcess==='포장'?'active':''}" data-proc="포장">포장</button>
+                        <button class="filter-btn ${this.state.machineQualityProcess==='검사'?'active':''}" data-proc="검사">검사</button>
                     </div>
-                    <div class="chart-container" style="height: 300px;"><canvas id="machineQualityChart"></canvas></div>
                 </div>
-                <div class="card chart-half-width">
-                    <div class="card-header"><h3><i class="fas fa-vial"></i> 금형 온도 vs 불량률 상관관계</h3></div>
-                    <div class="chart-container" style="height: 300px;"><canvas id="paramChart"></canvas></div>
+                <div class="chart-container" style="height: 300px;"><canvas id="machineEfficiencyChart"></canvas></div>
+            </div>
+
+            <div class="card chart-full-width mt-15">
+                <div class="card-header">
+                    <h3><i class="fas fa-chart-line"></i> 설비별 생산 안정성 트렌드 (Stability Trend)</h3>
                 </div>
+                <div class="chart-container" style="height: 350px;"><canvas id="machineStabilityChart"></canvas></div>
             </div>
         `;
 
@@ -616,7 +618,7 @@ class JMLMES {
             };
         });
 
-        document.querySelectorAll('#machine-process-toggle .filter-btn').forEach(btn => {
+        document.querySelectorAll('#machine-efficiency-toggle .filter-btn').forEach(btn => {
             btn.onclick = (e) => {
                 this.state.machineQualityProcess = e.target.dataset.proc;
                 this.renderQualityLayout(container, data);
@@ -624,7 +626,8 @@ class JMLMES {
         });
 
         this.renderCapBoxChart(data);
-        this.renderMachineQualityChart(data);
+        this.renderMachineEfficiencyChart(data);
+        this.renderMachineStabilityChart(data);
     }
 
     renderCapBoxChart(data) {
@@ -810,20 +813,26 @@ class JMLMES {
         });
     }
 
-    renderMachineQualityChart(data) {
-        const ctx = document.getElementById('machineQualityChart').getContext('2d');
-        if (this.state.charts.machineQuality) this.state.charts.machineQuality.destroy();
+    renderMachineEfficiencyChart(data) {
+        const canvas = document.getElementById('machineEfficiencyChart');
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        if (this.state.charts.machineEff) this.state.charts.machineEff.destroy();
 
         const process = this.state.machineQualityProcess;
         const mapping = { '성형': 'molding', '조립': 'assembly', '포장': 'packing', '검사': 'inspection' };
         const key = mapping[process];
         
-        // 장비 대수 정의 (사용자 제공 기준)
+        // Capa 계산 (설비당)
+        const param = this.state.config.simParams?.find(p => p.process === process) || { timeCapa: 500, runTime: 20 };
+        const dailyMachineCapa = (param.timeCapa || 500) * (param.runTime || 20);
+        const days = new Set(data.map(d => d.work_date)).size || 1;
+        const totalMachineCapa = dailyMachineCapa * days;
+
         const counts = { '성형': 5, '조립': 12, '포장': 4, '검사': 3 };
         const machineCount = counts[process] || 5;
         const labels = Array.from({length: machineCount}, (_, i) => `${process.slice(0,1)}${i+1}`);
 
-        // 실제 데이터 합산
         const machineSums = Array(machineCount).fill(0);
         data.forEach(d => {
             const details = d.machine_data?.[key] || [];
@@ -832,26 +841,82 @@ class JMLMES {
             });
         });
 
-        this.state.charts.machineQuality = new Chart(ctx, {
+        const efficiencyData = machineSums.map(sum => totalMachineCapa ? Math.round((sum / totalMachineCapa) * 100) : 0);
+
+        this.state.charts.machineEff = new Chart(ctx, {
             type: 'bar',
-            data: { 
-                labels, 
-                datasets: [{ 
-                    label: `${process} 설비별 누적 실적`, 
-                    data: machineSums, 
-                    backgroundColor: process === '조립' ? '#818cf8' : (process === '성형' ? '#3b82f6' : '#10b981'),
-                    borderRadius: 4
-                }] 
+            data: {
+                labels,
+                datasets: [{
+                    label: `${process} 설비별 가동 효율 (%)`,
+                    data: efficiencyData,
+                    backgroundColor: efficiencyData.map(v => v >= 90 ? 'rgba(34, 197, 94, 0.7)' : (v >= 70 ? 'rgba(234, 179, 8, 0.7)' : 'rgba(239, 68, 68, 0.7)')),
+                    borderColor: efficiencyData.map(v => v >= 90 ? '#22c55e' : (v >= 70 ? '#eab308' : '#ef4444')),
+                    borderWidth: 1,
+                    borderRadius: 6
+                }]
             },
-            options: { 
-                responsive: true, 
-                maintainAspectRatio: false,
+            options: {
+                indexAxis: 'y',
+                responsive: true, maintainAspectRatio: false,
                 scales: {
-                    y: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#94a3b8' } },
-                    x: { ticks: { color: '#94a3b8' } }
+                    x: { max: 120, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#94a3b8' } },
+                    y: { grid: { display: false }, ticks: { color: '#cbd5e1' } }
                 },
                 plugins: {
-                    legend: { display: false }
+                    legend: { display: false },
+                    datalabels: { display: true, align: 'end', anchor: 'end', formatter: v => v + '%', color: '#fff', font: { weight: 'bold', size: 10 } }
+                }
+            }
+        });
+    }
+
+    renderMachineStabilityChart(data) {
+        const canvas = document.getElementById('machineStabilityChart');
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        if (this.state.charts.machineStab) this.state.charts.machineStab.destroy();
+
+        const process = this.state.machineQualityProcess;
+        const mapping = { '성형': 'molding', '조립': 'assembly', '포장': 'packing', '검사': 'inspection' };
+        const key = mapping[process];
+        
+        const counts = { '성형': 5, '조립': 12, '포장': 4, '검사': 3 };
+        const machineCount = counts[process] || 5;
+        const machineLabels = Array.from({length: machineCount}, (_, i) => `${process.slice(0,1)}${i+1}`);
+        
+        const dates = [...new Set(data.map(d => d.work_date))].sort();
+        const colors = ['#60a5fa', '#34d399', '#f87171', '#fbbf24', '#a78bfa', '#fb7185', '#22d3ee', '#818cf8', '#f472b6', '#fb923c', '#94a3b8', '#5eead4'];
+
+        const datasets = machineLabels.map((mId, idx) => {
+            return {
+                label: mId,
+                data: dates.map(date => {
+                    const dayData = data.find(d => d.work_date === date);
+                    const details = dayData?.machine_data?.[key] || [];
+                    return details[idx] || 0;
+                }),
+                borderColor: colors[idx % colors.length],
+                borderWidth: 2,
+                pointRadius: 1,
+                tension: 0.3,
+                fill: false
+            };
+        });
+
+        this.state.charts.machineStab = new Chart(ctx, {
+            type: 'line',
+            data: { labels: dates, datasets },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                scales: {
+                    y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#94a3b8' } },
+                    x: { grid: { display: false }, ticks: { color: '#94a3b8', maxRotation: 45, minRotation: 45, font: { size: 9 } } }
+                },
+                plugins: {
+                    legend: { position: 'top', labels: { color: '#cbd5e1', boxWidth: 8, font: { size: 9 } } },
+                    datalabels: { display: false }
                 }
             }
         });
