@@ -633,16 +633,27 @@ class JMLMES {
         if (this.state.charts.capBox) this.state.charts.capBox.destroy();
 
         const scale = this.state.qualityScale;
+        const mode = this.state.dateMode;
         const groups = {};
 
+        // 1. 라벨 사전 생성 (연간 뷰인 경우 1년 전체 확보)
+        let labels = [];
+        if (mode === 'yearly') {
+            const year = this.state.selectedDate;
+            if (scale === 'monthly') {
+                for (let i = 1; i <= 12; i++) labels.push(`${year}-${i.toString().padStart(2, '0')}`);
+            } else if (scale === 'weekly') {
+                for (let i = 1; i <= 52; i++) labels.push(`${year}-W${i.toString().padStart(2, '0')}`);
+            }
+        }
+
+        // 2. 데이터 그룹화
         data.forEach(d => {
             if (!(d.cap_pull_off > 0)) return;
             
             let key = d.work_date;
             if (scale === 'weekly') {
-                const date = new Date(d.work_date);
-                const weekNum = Math.ceil(date.getDate() / 7);
-                key = `${d.work_date.slice(0,7)}-W${weekNum}`;
+                key = this.getISOWeekString(d.work_date);
             } else if (scale === 'monthly') {
                 key = d.work_date.slice(0, 7);
             }
@@ -655,11 +666,16 @@ class JMLMES {
             }
         });
 
-        const labels = Object.keys(groups).sort();
+        // 라벨이 미리 생성되지 않은 경우 (일간 뷰 등) 데이터 기반 생성
+        if (labels.length === 0) {
+            labels = Object.keys(groups).sort();
+        }
+        
         if (labels.length === 0) return;
 
-        const boxData = labels.map(k => groups[k].samples);
+        const boxData = labels.map(k => (groups[k] && groups[k].samples.length) ? groups[k].samples : []);
         const medians = labels.map(k => {
+            if (!groups[k] || !groups[k].samples.length) return null;
             const s = [...groups[k].samples].sort((a,b)=>a-b);
             const mid = Math.floor(s.length/2);
             return s.length % 2 !== 0 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
