@@ -560,10 +560,10 @@ class JMLMES {
                 datasets: [{ 
                     label: 'Capa 대비 실적 (%)', 
                     data: perfData, 
-                    // 대안 A: 바탕은 공정 고유 색상, 경고는 테두리로 강력하게 표시
+                    // 대안 A: 바탕은 공정 고유 색상, 경고/정상은 테두리로 명확히 표시 (범례와 100% 일치)
                     backgroundColor: baseColors.map(c => `rgba(${this.hexToRgb(c) || '59, 130, 246'}, 0.8)`),
-                    borderColor: perfData.map((v, i) => v < 70 ? '#ef4444' : (v < 90 ? '#eab308' : baseColors[i])),
-                    borderWidth: perfData.map(v => v < 90 ? 3 : 1),
+                    borderColor: perfData.map(v => v < 70 ? '#ef4444' : (v < 90 ? '#eab308' : '#10b981')),
+                    borderWidth: 3,
                     borderRadius: 6
                 }] 
             },
@@ -839,11 +839,11 @@ class JMLMES {
                     label: '가동 효율 (%)',
                     data: efficiencyData,
                     backgroundColor: efficiencyData.map(v => {
-                        if (v < 70) return 'rgba(239, 68, 68, 0.6)';
-                        if (v < 90) return 'rgba(234, 179, 8, 0.6)';
-                        return `rgba(${this.hexToRgb(procColor)}, 0.6)`;
+                        if (v < 70) return 'rgba(239, 68, 68, 0.6)'; // Red
+                        if (v < 90) return 'rgba(234, 179, 8, 0.6)'; // Yellow
+                        return 'rgba(16, 185, 129, 0.6)'; // Green (범례와 일치)
                     }),
-                    borderColor: efficiencyData.map(v => v < 70 ? '#ef4444' : (v < 90 ? '#eab308' : procColor)),
+                    borderColor: efficiencyData.map(v => v < 70 ? '#ef4444' : (v < 90 ? '#eab308' : '#10b981')),
                     borderWidth: 2,
                     borderRadius: 8
                 }]
@@ -852,7 +852,8 @@ class JMLMES {
                 indexAxis: 'y',
                 responsive: true, maintainAspectRatio: false,
                 scales: {
-                    x: { max: 120, grid: { color: 'rgba(255,255,255,0.03)' }, ticks: { color: '#64748b' } },
+                    // max: 120 고정을 풀고, 데이터에 따라 유연하게 늘어나도록 suggestedMax 사용
+                    x: { beginAtZero: true, suggestedMax: 100, grid: { color: 'rgba(255,255,255,0.03)' }, ticks: { color: '#64748b' } },
                     y: { grid: { display: false }, ticks: { color: '#cbd5e1' } }
                 },
                 plugins: {
