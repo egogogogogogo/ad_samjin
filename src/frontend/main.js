@@ -453,14 +453,15 @@ class JMLMES {
     renderParetoChart(data) {
         const ctx = document.getElementById('defectChart').getContext('2d');
         if (this.state.charts.pareto) this.state.charts.pareto.destroy();
+        // 실제 저장된 불량 키값(영문)을 한글 명칭으로 매핑
         const mapping = { 
-            'SQ': '치수불량', 'SC': '스크레치', 'CO': '표면결함', 
-            'SP': '이물혼입', 'TI': '기울어짐', 'DF': '조립불량', 'ETC': '기타결함' 
+            'dent': '찌그러짐', 'scratch': '스크래치', 'contamination': '오염/이물', 
+            'spring': '스프링이탈', 'tilt': '기울어짐', 'etc': '기타' 
         };
         const counts = {};
         data.forEach(d => { 
             Object.entries(d.defect_detail || {}).forEach(([k, v]) => { 
-                const name = mapping[k.toUpperCase()] || k; 
+                const name = mapping[k.toLowerCase()] || k; 
                 counts[name] = (counts[name] || 0) + v; 
             }); 
         });
@@ -478,7 +479,8 @@ class JMLMES {
                         label: '누적 %', data: cumData, type: 'line', borderColor: '#fbbf24', yAxisID: 'y1', order: 1, tension: 0.2, pointRadius: 4,
                         datalabels: { display: true, align: 'top', formatter: (v) => v + '%', color: '#fbbf24', font: { weight: 'bold' } }
                     },
-                    { label: '불량수', data: sorted.map(s => s[1]), backgroundColor: '#818cf8', yAxisID: 'y', order: 2, datalabels: { display: false } }
+                    // 불량수 막대를 강렬한 빨간색(Red)으로 변경
+                    { label: '불량수', data: sorted.map(s => s[1]), backgroundColor: '#ef4444', yAxisID: 'y', order: 2, datalabels: { display: false } }
                 ]
             },
             plugins: [ChartDataLabels],
