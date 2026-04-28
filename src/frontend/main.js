@@ -303,13 +303,34 @@ class JMLMES {
             acc.actual += (curr.actual_qty || 0); acc.target += (curr.target_qty || 0); acc.defect += (curr.defect_qty || 0);
             return acc;
         }, { actual: 0, target: 0, defect: 0 });
+        
         const ppm = s.actual ? Math.round((s.defect / s.actual) * 1e6) : 0;
         const achieve = s.target ? Math.round((s.actual / s.target) * 100) : 0;
+        
+        const ppmLimit = this.state.config?.thresholds?.ppm || 500;
+        
+        const getStatusClass = (type, val) => {
+            if (type === 'achieve') {
+                if (val >= 100) return 'status-success';
+                if (val >= 90) return 'status-warning';
+                return 'status-danger';
+            }
+            if (type === 'ppm') {
+                if (val <= ppmLimit) return 'status-success';
+                if (val <= ppmLimit * 1.5) return 'status-warning';
+                return 'status-danger';
+            }
+            return '';
+        };
+
+        const achieveStatus = getStatusClass('achieve', achieve);
+        const ppmStatus = getStatusClass('ppm', ppm);
+
         document.getElementById('kpi-container').innerHTML = `
-            <div class="kpi-card"><div class="label">생산 달성률</div><div class="value">${achieve}%</div></div>
-            <div class="kpi-card"><div class="label">품질 (PPM)</div><div class="value">${ppm.toLocaleString()}</div></div>
-            <div class="kpi-card"><div class="label">누적 실적</div><div class="value">${s.actual.toLocaleString()}</div></div>
-            <div class="kpi-card"><div class="label">총 불량수</div><div class="value">${s.defect.toLocaleString()}</div></div>
+            <div class="kpi-card ${achieveStatus}"><div class="label">생산 달성률</div><div class="value">${achieve}%</div></div>
+            <div class="kpi-card ${ppmStatus}"><div class="label">품질 (PPM)</div><div class="value">${ppm.toLocaleString()}</div></div>
+            <div class="kpi-card ${achieveStatus}"><div class="label">누적 실적</div><div class="value">${s.actual.toLocaleString()}</div></div>
+            <div class="kpi-card ${ppmStatus}"><div class="label">총 불량수</div><div class="value">${s.defect.toLocaleString()}</div></div>
         `;
     }
 

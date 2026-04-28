@@ -474,15 +474,44 @@ input:focus {
 }
 
 .kpi-card {
-    background: var(--bg-card);
-    padding: 24px;
-    border-radius: var(--radius);
-    border: 1px solid var(--border);
-    box-shadow: var(--shadow);
+    background: var(--card-bg);
+    padding: 20px;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
 }
 
-.kpi-card .label { color: var(--text-dim); font-size: 0.85rem; font-weight: 600; }
-.kpi-card .value { font-size: 1.8rem; font-weight: 700; margin: 8px 0; font-family: 'IBM Plex Mono'; }
+.kpi-card::before {
+    content: '';
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 4px;
+    background: transparent;
+    transition: background 0.3s ease;
+}
+
+.kpi-card.status-success::before { background: var(--success); }
+.kpi-card.status-warning::before { background: var(--warning); }
+.kpi-card.status-danger::before { background: var(--danger); }
+
+.kpi-card.status-success .value { color: var(--success); }
+.kpi-card.status-warning .value { color: var(--warning); }
+.kpi-card.status-danger .value { color: var(--danger); }
+
+.kpi-card .label {
+    color: var(--text-dim);
+    font-size: 0.85rem;
+    font-weight: 600;
+    margin-bottom: 10px;
+}
+
+.kpi-card .value {
+    font-size: 1.8rem;
+    font-weight: 700;
+    font-family: 'Outfit', sans-serif;
+}
 
 /* Charts */
 /* --- Dashboard Expert Layout --- */
