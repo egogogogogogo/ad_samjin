@@ -192,14 +192,33 @@ class JMLMES {
     async loadConfig() {
         if (!this.state.partner) return;
         const { data } = await this.supabase.from('app_config').select('*').eq('partner_id', this.state.partner.id).single();
+        
+        // 기본값 정의
+        const defaultThresholds = { ppm: 500, monthlyTarget: 4500000, defectLimit: 80, capRisk: 410 };
+        const defaultSimParams = [
+            { process: '성형', timeCapa: 550, runTime: 20, machines: 5, days: 25, personnel: 2 },
+            { process: '조립', timeCapa: 1200, runTime: 20, machines: 12, days: 25, personnel: 5 },
+            { process: '포장', timeCapa: 3500, runTime: 20, machines: 4, days: 25, personnel: 2 },
+            { process: '검사', timeCapa: 8000, runTime: 20, machines: 3, days: 25, personnel: 1 }
+        ];
+
         if (data) {
             this.state.config = {
-                thresholds: data.thresholds || { ppm: 500, monthlyTarget: 4500000, defectLimit: 80, capRisk: 410 },
-                simParams: data.sim_params
+                thresholds: data.thresholds || defaultThresholds,
+                simParams: data.sim_params || defaultSimParams
             };
         } else {
-            this.state.config = { thresholds: { ppm: 500, monthlyTarget: 4500000, defectLimit: 80, capRisk: 410 } };
+            this.state.config = { 
+                thresholds: defaultThresholds,
+                simParams: defaultSimParams
+            };
         }
+
+        // 초기 Capa 계산 수행 (대시보드 AI 분석에서 즉시 사용 가능하도록)
+        this.state.config.simParams.forEach(p => {
+            if (!p.dailyCapa) p.dailyCapa = (p.timeCapa || 0) * (p.runTime || 0) * (p.machines || 0);
+            if (!p.monthlyCapa) p.monthlyCapa = p.dailyCapa * (p.days || 0);
+        });
     }
 
     async refreshData() {
@@ -301,16 +320,26 @@ class JMLMES {
         const ppm = s.actual ? Math.round((s.defect / s.actual) * 1e6) : 0;
 
         if (sub === 'total') {
-            const moldingLoad = Math.round((s.molding / (this.state.config.simParams[0].dailyCapa * (data.length || 1))) * 100);
-            const assemblyLoad = Math.round((s.assembly / (this.state.config.simParams[1].dailyCapa * (data.length || 1))) * 100);
-            
-            msg = `종합 분석: 현재 PPM(${ppm.toLocaleString()})이 목표치 대비 ${ppm > 500 ? '초과' : '안정'} 상태입니다. `;
-            if (moldingLoad > assemblyLoad) {
-                msg += `특히 성형 공정 부하율이 ${moldingLoad}%로 가장 높으며, 병목 해소가 시급합니다. `;
+            const moldingParam = this.state.config?.simParams?.[0];
+            const assemblyParam = this.state.config?.simParams?.[1];
+
+            if (moldingParam && assemblyParam) {
+                const moldingDailyCapa = moldingParam.dailyCapa || (moldingParam.timeCapa * moldingParam.runTime * moldingParam.machines) || 1;
+                const assemblyDailyCapa = assemblyParam.dailyCapa || (assemblyParam.timeCapa * assemblyParam.runTime * assemblyParam.machines) || 1;
+
+                const moldingLoad = Math.round((s.molding / (moldingDailyCapa * (data.length || 1))) * 100);
+                const assemblyLoad = Math.round((s.assembly / (assemblyDailyCapa * (data.length || 1))) * 100);
+                
+                msg = `종합 분석: 현재 PPM(${ppm.toLocaleString()})이 목표치 대비 ${ppm > 500 ? '초과' : '안정'} 상태입니다. `;
+                if (moldingLoad > assemblyLoad) {
+                    msg += `특히 성형 공정 부하율이 ${moldingLoad}%로 가장 높으며, 병목 해소가 시급합니다. `;
+                } else {
+                    msg += `조립 공정 부하율(${assemblyLoad}%) 관리가 필요합니다. `;
+                }
+                if (ppm > 500) msg += `최근 성형 7호기 부근의 산포 급증을 점검하십시오.`;
             } else {
-                msg += `조립 공정 부하율(${assemblyLoad}%) 관리가 필요합니다. `;
+                msg = `종합 분석: 현재 PPM(${ppm.toLocaleString()})이 목표치 대비 ${ppm > 500 ? '초과' : '안정'} 상태입니다. 공정별 부하 분석을 위해 시뮬레이션 설정을 확인하십시오.`;
             }
-            if (ppm > 500) msg += `최근 성형 7호기 부근의 산포 급증을 점검하십시오.`;
         } else if (sub === 'quality') {
             msg = `품질 분석: Cap 탈거력의 평균 수치가 ${ppm > 500 ? '하락' : '안정'}세에 있으며, 특히 성형 온도가 높은 야간 시간대에 산포가 벌어지는 경향이 있습니다. CPK 1.33 확보를 위한 실시간 모니터링이 시급합니다.`;
         } else if (sub === 'machine') {
