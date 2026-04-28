@@ -144,12 +144,22 @@ class JMLMES {
         return input;
     }
 
-    getCurrentWeekString() {
-        const d = new Date(); d.setHours(0,0,0,0);
+    getISOWeek(date) {
+        const d = new Date(date);
+        d.setHours(0, 0, 0, 0);
         d.setDate(d.getDate() + 3 - (d.getDay() + 6) % 7);
         const week1 = new Date(d.getFullYear(), 0, 4);
         const weekNum = 1 + Math.round(((d.getTime() - week1.getTime()) / 86400000 - 3 + (week1.getDay() + 6) % 7) / 7);
-        return `${d.getFullYear()}-W${weekNum.toString().padStart(2, '0')}`;
+        return { year: d.getFullYear(), week: weekNum };
+    }
+
+    getISOWeekString(date) {
+        const { year, week } = this.getISOWeek(date);
+        return `${year}-W${week.toString().padStart(2, '0')}`;
+    }
+
+    getCurrentWeekString() {
+        return this.getISOWeekString(new Date());
     }
 
     async checkAuth() {
@@ -400,8 +410,7 @@ class JMLMES {
         data.forEach(d => {
             let key = d.work_date;
             if (this.state.trendScale === 'weekly') {
-                const dt = new Date(d.work_date); dt.setDate(dt.getDate() + 3 - (dt.getDay() + 6) % 7);
-                key = `${dt.getFullYear()}-W${Math.ceil((dt.getDate() + 6) / 7)}`;
+                key = this.getISOWeekString(d.work_date);
             } else if (this.state.trendScale === 'monthly') key = d.work_date.slice(0, 7);
             if (!grouped[key]) grouped[key] = { actual: 0, defect: 0 };
             grouped[key].actual += (d.actual_qty || 0); grouped[key].defect += (d.defect_qty || 0);
