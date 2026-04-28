@@ -351,30 +351,82 @@ class JMLMES {
         const ppm = s.actual ? Math.round((s.defect / s.actual) * 1e6) : 0;
 
         if (sub === 'total') {
+            const defectCounts = {};
+            const defectMapping = { 'dent': '찌그러짐', 'scratch': '스크래치', 'contamination': '오염/이물', 'spring': '스프링이탈', 'tilt': '기울어짐', 'etc': '기타' };
+            data.forEach(d => {
+                Object.entries(d.defect_detail || {}).forEach(([k, v]) => {
+                    const name = defectMapping[k.toLowerCase()] || k;
+                    defectCounts[name] = (defectCounts[name] || 0) + v;
+                });
+            });
+            const topDefect = Object.entries(defectCounts).sort((a, b) => b[1] - a[1])[0];
+            const defectStr = topDefect ? `가장 심각한 불량 유형은 [${topDefect[0]}](${topDefect[1]}건)입니다.` : '현재 검출된 주요 불량이 없습니다.';
+            
             const moldingParam = this.state.config?.simParams?.[0];
             const assemblyParam = this.state.config?.simParams?.[1];
-
+            let loadStr = '';
             if (moldingParam && assemblyParam) {
                 const moldingDailyCapa = moldingParam.dailyCapa || (moldingParam.timeCapa * moldingParam.runTime * moldingParam.machines) || 1;
                 const assemblyDailyCapa = assemblyParam.dailyCapa || (assemblyParam.timeCapa * assemblyParam.runTime * assemblyParam.machines) || 1;
-
                 const moldingLoad = Math.round((s.molding / (moldingDailyCapa * (data.length || 1))) * 100);
                 const assemblyLoad = Math.round((s.assembly / (assemblyDailyCapa * (data.length || 1))) * 100);
-                
-                msg = `종합 분석: 현재 PPM(${ppm.toLocaleString()})이 목표치 대비 ${ppm > 500 ? '초과' : '안정'} 상태입니다. `;
-                if (moldingLoad > assemblyLoad) {
-                    msg += `특히 성형 공정 부하율이 ${moldingLoad}%로 가장 높으며, 병목 해소가 시급합니다. `;
-                } else {
-                    msg += `조립 공정 부하율(${assemblyLoad}%) 관리가 필요합니다. `;
-                }
-                if (ppm > 500) msg += `최근 성형 7호기 부근의 산포 급증을 점검하십시오.`;
-            } else {
-                msg = `종합 분석: 현재 PPM(${ppm.toLocaleString()})이 목표치 대비 ${ppm > 500 ? '초과' : '안정'} 상태입니다. 공정별 부하 분석을 위해 시뮬레이션 설정을 확인하십시오.`;
+                loadStr = moldingLoad > assemblyLoad ? `성형 공정 부하율이 ${moldingLoad}%로 가장 높아 병목 관리가 필요합니다.` : `조립 공정 부하율(${assemblyLoad}%) 관리가 시급합니다.`;
             }
+
+            msg = `[종합 요약 분석] 현재 PPM(${ppm.toLocaleString()})은 ${ppm > 500 ? '경고' : '안정'} 수준입니다. ${defectStr} ${loadStr}`;
+            
         } else if (sub === 'quality') {
-            msg = `품질 분석: Cap 탈거력의 평균 수치가 ${ppm > 500 ? '하락' : '안정'}세에 있으며, 특히 성형 온도가 높은 야간 시간대에 산포가 벌어지는 경향이 있습니다. CPK 1.33 확보를 위한 실시간 모니터링이 시급합니다.`;
+            const allSamples = data.flatMap(d => {
+                if (Array.isArray(d.quality_samples) && d.quality_samples.length > 0) return d.quality_samples;
+                return d.cap_pull_off > 0 ? [d.cap_pull_off] : [];
+            }).map(Number).filter(v => v > 0);
+            
+            if (allSamples.length > 0) {
+                const avg = Math.round(allSamples.reduce((a, b) => a + b, 0) / allSamples.length);
+                const under400 = allSamples.filter(v => v < 400).length;
+                const underRate = ((under400 / allSamples.length) * 100).toFixed(1);
+                
+                msg = `[품질/공정 분석] 탈거력 전체 평균은 ${avg}N 입니다. `;
+                if (under400 > 0) {
+                    msg += `⚠️ 주의: 기준치(400N) 미달 위험 샘플이 총 ${under400}건(${underRate}%) 검출되어 공정 산포 관리가 시급합니다.`;
+                } else {
+                    msg += `✅ 양호: 전수 샘플이 품질 기준치(400N)를 안정적으로 초과 달성 중입니다.`;
+                }
+            } else {
+                msg = `[품질/공정 분석] 품질(탈거력) 샘플 데이터가 존재하지 않습니다.`;
+            }
+            
         } else if (sub === 'machine') {
-            msg = `설비 분석: 장비별 가동률 분석 결과, 조립 3호기와 7호기의 비가동(Downtime) 시간이 평균 대비 15% 높게 나타납니다. 부품 마모 상태를 즉시 점검하십시오.`;
+            const process = this.state.machineQualityProcess || '조립';
+            const mapping = { '성형': 'molding', '조립': 'assembly', '포장': 'packing', '검사': 'inspection' };
+            const counts = { '성형': 5, '조립': 12, '포장': 4, '검사': 3 };
+            const key = mapping[process];
+            const mCount = counts[process];
+            
+            const totalPerMachine = Array(mCount).fill(0);
+            data.forEach(d => {
+                const mData = d.machine_data?.[key] || [];
+                for(let i=0; i<mCount; i++) totalPerMachine[i] += (mData[i] || 0);
+            });
+            const processParam = this.state.config?.simParams?.find(p => p.process === process);
+            // 하루 목표량 (시간당Capa * 런타임)
+            const dailyCap = processParam ? (processParam.timeCapa * processParam.runTime) : 10000;
+            const targetTotal = dailyCap * (data.length || 1);
+            
+            const effArray = totalPerMachine.map((total, i) => ({
+                name: `${process.slice(0,1)}${i+1}호기`,
+                eff: Math.round((total / targetTotal) * 100)
+            })).filter(m => m.eff > 0);
+            
+            if (effArray.length > 0) {
+                effArray.sort((a, b) => a.eff - b.eff);
+                const worst = effArray[0];
+                const best = effArray[effArray.length - 1];
+                msg = `[설비/계획 분석] ${process} 공정 진단: [${worst.name}]의 가동 효율이 ${worst.eff}%로 가장 저조하여 병목 원인으로 추정됩니다. (최고 효율: ${best.name} ${best.eff}%)`;
+                if (worst.eff < 70) msg += ` 🚨 70% 미만 위험 설비에 대한 즉각적인 점검이 필요합니다.`;
+            } else {
+                msg = `[설비/계획 분석] 선택된 ${process} 공정의 설비 가동 데이터가 없습니다.`;
+            }
         }
         try {
             document.getElementById('ai-insight-text').innerText = msg || "데이터 분석 중입니다...";
