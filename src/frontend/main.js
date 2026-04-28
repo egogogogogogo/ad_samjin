@@ -727,8 +727,8 @@ class JMLMES {
 
         // 프리미엄 그라데이션
         const boxGradient = ctx.createLinearGradient(0, 0, 0, 300);
-        boxGradient.addColorStop(0, 'rgba(59, 130, 246, 0.3)');
-        boxGradient.addColorStop(1, 'rgba(30, 58, 138, 0.1)');
+        boxGradient.addColorStop(0, 'rgba(34, 211, 238, 0.4)');
+        boxGradient.addColorStop(1, 'rgba(34, 211, 238, 0.05)');
 
         this.state.charts.capBox = new Chart(ctx, {
             data: {
@@ -738,10 +738,10 @@ class JMLMES {
                         label: '품질 트렌드 (중앙값)',
                         type: 'line',
                         data: medians,
-                        borderColor: '#60a5fa',
+                        borderColor: '#ffffff', // High contrast white
                         borderWidth: 3,
                         pointBackgroundColor: '#ffffff',
-                        pointBorderColor: '#3b82f6',
+                        pointBorderColor: '#22d3ee',
                         pointBorderWidth: 2,
                         pointRadius: 4,
                         pointHoverRadius: 7,
@@ -753,7 +753,7 @@ class JMLMES {
                         type: 'boxplot',
                         data: boxData,
                         backgroundColor: boxGradient,
-                        borderColor: 'rgba(96, 165, 250, 0.8)',
+                        borderColor: '#22d3ee',
                         borderWidth: 1.5,
                         outlierBackgroundColor: '#f43f5e',
                         outlierRadius: 3,
@@ -825,9 +825,10 @@ class JMLMES {
 
         const process = this.state.machineQualityProcess;
         const mapping = { '성형': 'molding', '조립': 'assembly', '포장': 'packing', '검사': 'inspection' };
+        const colors = { '성형': '#3b82f6', '조립': '#fbbf24', '포장': '#8b5cf6', '검사': '#10b981' };
         const key = mapping[process];
+        const procColor = colors[process] || '#60a5fa';
         
-        // Capa 계산 (설비당)
         const param = this.state.config.simParams?.find(p => p.process === process) || { timeCapa: 500, runTime: 20 };
         const dailyMachineCapa = (param.timeCapa || 500) * (param.runTime || 20);
         const days = new Set(data.map(d => d.work_date)).size || 1;
@@ -845,34 +846,43 @@ class JMLMES {
             });
         });
 
-        const efficiencyData = machineSums.map(sum => totalMachineCapa ? Math.round((sum / totalMachineCapa) * 100) : 0);
-
+        // 글래스모피즘 입체 막대 디자인
         this.state.charts.machineEff = new Chart(ctx, {
             type: 'bar',
             data: {
                 labels,
                 datasets: [{
-                    label: `${process} 설비별 가동 효율 (%)`,
+                    label: '가동 효율 (%)',
                     data: efficiencyData,
-                    backgroundColor: efficiencyData.map(v => v >= 90 ? 'rgba(34, 197, 94, 0.7)' : (v >= 70 ? 'rgba(234, 179, 8, 0.7)' : 'rgba(239, 68, 68, 0.7)')),
-                    borderColor: efficiencyData.map(v => v >= 90 ? '#22c55e' : (v >= 70 ? '#eab308' : '#ef4444')),
-                    borderWidth: 1,
-                    borderRadius: 6
+                    backgroundColor: efficiencyData.map(v => {
+                        if (v < 70) return 'rgba(239, 68, 68, 0.6)'; // Danger
+                        if (v < 90) return 'rgba(234, 179, 8, 0.6)';  // Warning
+                        return `rgba(${this.hexToRgb(procColor)}, 0.6)`; // Success (Process Color)
+                    }),
+                    borderColor: efficiencyData.map(v => v < 70 ? '#ef4444' : (v < 90 ? '#eab308' : procColor)),
+                    borderWidth: 2,
+                    borderRadius: 8,
+                    borderSkipped: false
                 }]
             },
             options: {
                 indexAxis: 'y',
                 responsive: true, maintainAspectRatio: false,
                 scales: {
-                    x: { max: 120, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#94a3b8' } },
-                    y: { grid: { display: false }, ticks: { color: '#cbd5e1' } }
+                    x: { max: 120, grid: { color: 'rgba(255,255,255,0.03)' }, ticks: { color: '#64748b' } },
+                    y: { grid: { display: false }, ticks: { color: '#cbd5e1', font: { weight: 'bold' } } }
                 },
                 plugins: {
                     legend: { display: false },
-                    datalabels: { display: true, align: 'end', anchor: 'end', formatter: v => v + '%', color: '#fff', font: { weight: 'bold', size: 10 } }
+                    datalabels: { display: true, align: 'end', anchor: 'end', formatter: v => v + '%', color: '#fff', font: { weight: 'bold', size: 11 } }
                 }
             }
         });
+    }
+
+    hexToRgb(hex) {
+        const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+        return result ? `${parseInt(result[1], 16)}, ${parseInt(result[2], 16)}, ${parseInt(result[3], 16)}` : '96, 165, 250';
     }
 
     renderMachineViolinChart(data) {
@@ -883,7 +893,9 @@ class JMLMES {
 
         const process = this.state.machineQualityProcess;
         const mapping = { '성형': 'molding', '조립': 'assembly', '포장': 'packing', '검사': 'inspection' };
+        const colors = { '성형': '#3b82f6', '조립': '#fbbf24', '포장': '#8b5cf6', '검사': '#10b981' };
         const key = mapping[process];
+        const procColor = colors[process] || '#60a5fa';
         
         const counts = { '성형': 5, '조립': 12, '포장': 4, '검사': 3 };
         const machineCount = counts[process] || 5;
@@ -897,6 +909,11 @@ class JMLMES {
             }).filter(v => v > 0);
         });
 
+        // 공정별 고유 컬러 모티프 그라데이션
+        const gradient = ctx.createLinearGradient(0, 0, 0, 400);
+        gradient.addColorStop(0, `rgba(${this.hexToRgb(procColor)}, 0.5)`);
+        gradient.addColorStop(1, `rgba(${this.hexToRgb(procColor)}, 0.05)`);
+
         this.state.charts.machineViolin = new Chart(ctx, {
             type: 'violin',
             data: {
@@ -904,9 +921,9 @@ class JMLMES {
                 datasets: [{
                     label: `${process} 설비별 생산 분포`,
                     data: machineGroups,
-                    backgroundColor: 'rgba(96, 165, 250, 0.4)',
-                    borderColor: '#60a5fa',
-                    borderWidth: 1.5,
+                    backgroundColor: gradient,
+                    borderColor: procColor,
+                    borderWidth: 2,
                     outlierRadius: 0,
                     itemRadius: 0
                 }]
@@ -915,9 +932,13 @@ class JMLMES {
                 responsive: true, maintainAspectRatio: false,
                 scales: {
                     y: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#94a3b8' } },
-                    x: { grid: { display: false }, ticks: { color: '#cbd5e1' } }
+                    x: { grid: { display: false }, ticks: { color: '#cbd5e1', font: { weight: 'bold' } } }
                 },
-                plugins: { legend: { display: false }, datalabels: { display: false } }
+                plugins: {
+                    legend: { display: false },
+                    datalabels: { display: false },
+                    tooltip: { backgroundColor: 'rgba(15, 23, 42, 0.9)', titleColor: procColor }
+                }
             }
         });
     }
