@@ -665,15 +665,13 @@ class JMLMES {
         const mode = this.state.dateMode;
         const selected = this.state.selectedDate;
 
-        // 1. 라벨 사전 생성 (모든 모드에서 전체 기간 확보)
+        // 1. 라벨 사전 생성 (모든 모드와 스케일 조합 대응)
         let labels = [];
         if (mode === 'yearly') {
             const year = selected;
-            if (scale === 'monthly') {
-                for (let i = 1; i <= 12; i++) labels.push(`${year}-${i.toString().padStart(2, '0')}`);
-            } else if (scale === 'weekly') {
-                for (let i = 1; i <= 52; i++) labels.push(`${year}-W${i.toString().padStart(2, '0')}`);
-            } else if (scale === 'daily') {
+            if (scale === 'monthly') for (let i = 1; i <= 12; i++) labels.push(`${year}-${i.toString().padStart(2, '0')}`);
+            else if (scale === 'weekly') for (let i = 1; i <= 52; i++) labels.push(`${year}-W${i.toString().padStart(2, '0')}`);
+            else if (scale === 'daily') {
                 for (let m = 0; m < 12; m++) {
                     const lastDay = new Date(year, m + 1, 0).getDate();
                     for (let d = 1; d <= lastDay; d++) labels.push(`${year}-${(m + 1).toString().padStart(2, '0')}-${d.toString().padStart(2, '0')}`);
@@ -682,45 +680,46 @@ class JMLMES {
         } else if (mode === 'monthly') {
             const [y, m] = selected.split('-').map(Number);
             const lastDay = new Date(y, m, 0).getDate();
-            if (scale === 'daily') {
-                for (let d = 1; d <= lastDay; d++) labels.push(`${y}-${m.toString().padStart(2, '0')}-${d.toString().padStart(2, '0')}`);
-            } else if (scale === 'weekly') {
+            if (scale === 'daily') for (let d = 1; d <= lastDay; d++) labels.push(`${y}-${m.toString().padStart(2, '0')}-${d.toString().padStart(2, '0')}`);
+            else if (scale === 'weekly') {
                 let curr = new Date(y, m - 1, 1);
-                curr.setDate(curr.getDate() + (1 - curr.getDay())); 
-                while (curr <= new Date(y, m - 1, lastDay) || this.getISOWeekString(curr) === this.getISOWeekString(new Date(y, m - 1, lastDay))) {
+                while (curr.getMonth() === m - 1) {
                     const ws = this.getISOWeekString(curr);
                     if (!labels.includes(ws)) labels.push(ws);
-                    curr.setDate(curr.getDate() + 7);
+                    curr.setDate(curr.getDate() + 1);
                 }
-            }
+            } else if (scale === 'monthly') labels.push(selected); // 월간-월별 대응
         } else if (mode === 'weekly') {
             if (scale === 'daily') {
                 const [y, wStr] = selected.split('-W');
-                const year = Number(y);
-                const week = Number(wStr);
-                const d = new Date(year, 0, 4);
-                d.setDate(d.getDate() + (week - 1) * 7 - (d.getDay() + 6) % 7);
-                for (let i = 0; i < 7; i++) {
-                    labels.push(d.toISOString().split('T')[0]);
-                    d.setDate(d.getDate() + 1);
-                }
-            }
+                const d = new Date(Number(y), 0, 4);
+                d.setDate(d.getDate() + (Number(wStr) - 1) * 7 - (d.getDay() + 6) % 7);
+                for (let i = 0; i < 7; i++) { labels.push(d.toISOString().split('T')[0]); d.setDate(d.getDate() + 1); }
+            } else if (scale === 'weekly') labels.push(selected); // 주간-주별 대응
         }
 
-        // 2. 데이터 매핑 (사전 생성된 라벨 기준)
+        // 2. 데이터 매핑 (Raw Samples 안전하게 수집)
         const grouped = this.groupDataByScale(data, scale);
-        const boxData = labels.map(label => (grouped[label] || []).map(d => d.cap_pull_off).filter(v => v > 0));
-        const medians = labels.map(label => {
-            const s = (grouped[label] || []).map(d => d.cap_pull_off).filter(v => v > 0).sort((a,b)=>a-b);
-            if (s.length === 0) return null;
+        const boxData = labels.map(label => {
+            const dayData = grouped[label] || [];
+            const allSamples = dayData.flatMap(d => {
+                if (Array.isArray(d.quality_samples) && d.quality_samples.length > 0) return d.quality_samples;
+                return d.cap_pull_off > 0 ? [d.cap_pull_off] : [];
+            }).map(Number).filter(v => v > 0);
+            return allSamples;
+        });
+
+        const medians = boxData.map(samples => {
+            if (samples.length === 0) return null;
+            const s = [...samples].sort((a,b)=>a-b);
             const mid = Math.floor(s.length/2);
             return s.length % 2 !== 0 ? s[mid] : (s[mid-1] + s[mid]) / 2;
         });
 
-        // 3. 다이나믹 스케일 계산
-        const allSamples = boxData.flat();
-        const minVal = allSamples.length > 0 ? Math.min(...allSamples, 415) - 5 : 390;
-        const maxVal = allSamples.length > 0 ? Math.max(...allSamples, 465) + 5 : 480;
+        // 3. 다이나믹 스케일 최적화 (사용자 v13 데이터 범위인 400~460에 집중)
+        const flattenData = boxData.flat();
+        const minVal = flattenData.length > 0 ? Math.min(...flattenData, 405) - 5 : 400;
+        const maxVal = flattenData.length > 0 ? Math.max(...flattenData, 460) + 5 : 470;
 
         const boxGradient = ctx.createLinearGradient(0, 0, 0, 400);
         boxGradient.addColorStop(0, 'rgba(34, 211, 238, 0.4)');
@@ -735,10 +734,9 @@ class JMLMES {
                         type: 'line',
                         data: medians,
                         borderColor: '#ffffff',
-                        borderWidth: 2.5,
+                        borderWidth: 2,
                         pointBackgroundColor: '#22d3ee',
-                        pointBorderColor: '#ffffff',
-                        pointRadius: 4,
+                        pointRadius: 3,
                         tension: 0.4,
                         z: 10
                     },
@@ -748,8 +746,8 @@ class JMLMES {
                         data: boxData,
                         backgroundColor: boxGradient,
                         borderColor: '#22d3ee',
-                        borderWidth: 2,
-                        medianColor: 'transparent',
+                        borderWidth: 1.5,
+                        medianColor: '#fff',
                         outlierBackgroundColor: '#f43f5e',
                         itemRadius: 0,
                         z: 1
@@ -1160,15 +1158,16 @@ class JMLMES {
             const inputSheet = workbook.Sheets[workbook.SheetNames[0]]; // 첫 번째 시트 사용
             const rows = XLSX.utils.sheet_to_json(inputSheet, { header: 1 });
             
-            // Raw Data 전용 단일 시트 파싱 (날짜:0, M:1~5, A:6~16, P:17~20, I:21~23, D:24~29, R:30, C:31~42)
-            const validRows = rows.slice(2).filter(row => row[0] && !isNaN(new Date(row[0]).getTime()));
+            // v13 표준 파싱 (A:날짜, AF~AQ:품질샘플)
+            const validRows = rows.slice(2).filter(row => row[0]);
             this.state.pendingUploadData = validRows.map(row => {
                 const m_raw = row.slice(1, 6).map(v => Number(v) || 0);
                 const a_raw = row.slice(6, 17).map(v => Number(v) || 0);
                 const p_raw = row.slice(17, 21).map(v => Number(v) || 0);
                 const i_raw = row.slice(21, 24).map(v => Number(v) || 0);
                 const d_raw = row.slice(24, 30).map(v => Number(v) || 0);
-                const c_raw = row.slice(31, 43).map(v => Number(v) || 0);
+                // AF(31) ~ AQ(42) 열에서 실제 탈거력 샘플 전수 추출 (필터링 없이 모든 측정값 수용)
+                const c_raw = row.slice(31, 43).map(v => Number(v) || 0).filter(v => v > 0);
 
                 return {
                     partner_id: this.state.partner.id,
@@ -1178,19 +1177,10 @@ class JMLMES {
                     packing_qty: p_raw.reduce((a, b) => a + b, 0),
                     actual_qty: i_raw.reduce((a, b) => a + b, 0),
                     defect_qty: d_raw.reduce((a, b) => a + b, 0),
-                    machine_data: {
-                        molding: m_raw,
-                        assembly: a_raw,
-                        packing: p_raw,
-                        inspection: i_raw
-                    },
+                    machine_data: { molding: m_raw, assembly: a_raw, packing: p_raw, inspection: i_raw },
                     defect_detail: {
-                        dent: d_raw[0],
-                        scratch: d_raw[1],
-                        contamination: d_raw[2],
-                        spring: d_raw[3],
-                        tilt: d_raw[4],
-                        etc: d_raw[5]
+                        dent: d_raw[0], scratch: d_raw[1], contamination: d_raw[2],
+                        spring: d_raw[3], tilt: d_raw[4], etc: d_raw[5]
                     },
                     quality_samples: c_raw,
                     remarks: row[30] || '',
