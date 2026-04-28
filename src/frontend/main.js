@@ -690,9 +690,8 @@ class JMLMES {
         }
 
         // 2. 데이터 그룹화
-        data.forEach(d => {
         const grouped = this.groupDataByScale(data, this.state.qualityScale);
-        const labels = Object.keys(grouped).sort();
+        labels = Object.keys(grouped).sort();
         const boxData = labels.map(label => grouped[label].map(d => d.cap_pull_off).filter(v => v > 0));
         const medians = labels.map(label => {
             const s = grouped[label].map(d => d.cap_pull_off).filter(v => v > 0).sort((a,b)=>a-b);
