@@ -590,7 +590,6 @@ class JMLMES {
                 <div class="chart-container" style="height: 350px;"><canvas id="capBoxChart"></canvas></div>
             </div>
             
-            <!-- 통합 공정 선택 바 -->
             <div class="section-divider mt-20 mb-15">
                 <div class="section-label">설비 실적 및 안정성 정밀 분석</div>
                 <div class="filter-group-horizontal" id="machine-global-toggle">
@@ -608,11 +607,19 @@ class JMLMES {
                 <div class="chart-container" style="height: 300px;"><canvas id="machineEfficiencyChart"></canvas></div>
             </div>
 
-            <div class="card chart-full-width mt-15">
-                <div class="card-header">
-                    <h3><i class="fas fa-chart-bar"></i> [${this.state.machineQualityProcess}] 설비별 생산 안정성 분석 (Stability Box-Plot)</h3>
+            <div class="chart-row-split mt-15">
+                <div class="card chart-half-width">
+                    <div class="card-header">
+                        <h3><i class="fas fa-wave-square"></i> [비교 1] 바이올린 플롯 (Violin Plot)</h3>
+                    </div>
+                    <div class="chart-container" style="height: 400px;"><canvas id="machineViolinChart"></canvas></div>
                 </div>
-                <div class="chart-container" style="height: 350px;"><canvas id="machineStabilityChart"></canvas></div>
+                <div class="card chart-half-width">
+                    <div class="card-header">
+                        <h3><i class="fas fa-mountain"></i> [비교 2] 릿지 플롯 (Ridge Plot)</h3>
+                    </div>
+                    <div class="chart-container" style="height: 400px;"><canvas id="machineRidgeChart"></canvas></div>
+                </div>
             </div>
         `;
 
@@ -632,7 +639,8 @@ class JMLMES {
 
         this.renderCapBoxChart(data);
         this.renderMachineEfficiencyChart(data);
-        this.renderMachineStabilityChart(data);
+        this.renderMachineViolinChart(data);
+        this.renderMachineRidgeChart(data);
     }
 
     renderCapBoxChart(data) {
@@ -876,11 +884,11 @@ class JMLMES {
         });
     }
 
-    renderMachineStabilityChart(data) {
-        const canvas = document.getElementById('machineStabilityChart');
+    renderMachineViolinChart(data) {
+        const canvas = document.getElementById('machineViolinChart');
         if (!canvas) return;
         const ctx = canvas.getContext('2d');
-        if (this.state.charts.machineStab) this.state.charts.machineStab.destroy();
+        if (this.state.charts.machineViolin) this.state.charts.machineViolin.destroy();
 
         const process = this.state.machineQualityProcess;
         const mapping = { '성형': 'molding', '조립': 'assembly', '포장': 'packing', '검사': 'inspection' };
@@ -889,56 +897,105 @@ class JMLMES {
         const counts = { '성형': 5, '조립': 12, '포장': 4, '검사': 3 };
         const machineCount = counts[process] || 5;
         const machineLabels = Array.from({length: machineCount}, (_, i) => `${process.slice(0,1)}${i+1}`);
-        
         const dates = [...new Set(data.map(d => d.work_date))].sort();
 
-        // 설비별 일일 생산량 데이터 집계 (Box-Plot용)
         const machineGroups = machineLabels.map((mId, idx) => {
-            const samples = dates.map(date => {
+            return dates.map(date => {
                 const dayData = data.find(d => d.work_date === date);
-                const details = dayData?.machine_data?.[key] || [];
-                return details[idx] || 0;
-            }).filter(v => v > 0); // 0(비가동) 제외하고 실제 가동일의 산포 확인
-            return samples;
+                return (dayData?.machine_data?.[key] || [])[idx] || 0;
+            }).filter(v => v > 0);
         });
 
-        // 박스플롯 컬러 그라데이션
-        const boxGradient = ctx.createLinearGradient(0, 0, 0, 400);
-        boxGradient.addColorStop(0, 'rgba(96, 165, 250, 0.4)');
-        boxGradient.addColorStop(1, 'rgba(59, 130, 246, 0.1)');
-
-        this.state.charts.machineStab = new Chart(ctx, {
-            type: 'boxplot',
+        this.state.charts.machineViolin = new Chart(ctx, {
+            type: 'violin',
             data: {
                 labels: machineLabels,
                 datasets: [{
-                    label: `${process} 설비별 생산 안정성`,
+                    label: `${process} 설비별 생산 분포`,
                     data: machineGroups,
-                    backgroundColor: boxGradient,
+                    backgroundColor: 'rgba(96, 165, 250, 0.4)',
                     borderColor: '#60a5fa',
                     borderWidth: 1.5,
-                    outlierBackgroundColor: '#f43f5e',
-                    itemRadius: 0,
-                    medianColor: '#ffffff'
+                    outlierRadius: 0,
+                    itemRadius: 0
                 }]
             },
             options: {
                 responsive: true, maintainAspectRatio: false,
                 scales: {
-                    y: { 
-                        beginAtZero: true, 
-                        grid: { color: 'rgba(255, 255, 255, 0.05)' }, 
-                        ticks: { color: '#94a3b8' },
-                        title: { display: true, text: '일일 생산량', color: '#64748b' }
-                    },
+                    y: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#94a3b8' } },
                     x: { grid: { display: false }, ticks: { color: '#cbd5e1' } }
                 },
+                plugins: { legend: { display: false }, datalabels: { display: false } }
+            }
+        });
+    }
+
+    renderMachineRidgeChart(data) {
+        const canvas = document.getElementById('machineRidgeChart');
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        if (this.state.charts.machineRidge) this.state.charts.machineRidge.destroy();
+
+        const process = this.state.machineQualityProcess;
+        const mapping = { '성형': 'molding', '조립': 'assembly', '포장': 'packing', '검사': 'inspection' };
+        const key = mapping[process];
+        
+        const counts = { '성형': 5, '조립': 12, '포장': 4, '검사': 3 };
+        const machineCount = counts[process] || 5;
+        const machineLabels = Array.from({length: machineCount}, (_, i) => `${process.slice(0,1)}${i+1}`);
+        const dates = [...new Set(data.map(d => d.work_date))].sort();
+
+        // KDE (Kernel Density Estimation) Simple Implementation
+        const getKDE = (samples, range) => {
+            if (samples.length < 2) return range.map(() => 0);
+            const bandwidth = 1.06 * Math.sqrt(samples.reduce((a,b)=>a+Math.pow(b-samples.reduce((p,c)=>p+c)/samples.length,2),0)/samples.length) * Math.pow(samples.length, -0.2) || 10000;
+            return range.map(x => {
+                return samples.reduce((acc, s) => {
+                    const z = (x - s) / bandwidth;
+                    return acc + (1 / Math.sqrt(2 * Math.PI)) * Math.exp(-0.5 * z * z);
+                }, 0) / (samples.length * bandwidth);
+            });
+        };
+
+        // 생산량 범위 설정 (0 ~ Max 생산량)
+        const allVals = data.flatMap(d => d.machine_data?.[key] || []).filter(v => v > 0);
+        const maxVal = Math.max(...allVals, 300000);
+        const range = Array.from({length: 50}, (_, i) => (maxVal / 50) * i);
+
+        const colors = ['rgba(96, 165, 250, 0.5)', 'rgba(52, 211, 153, 0.5)', 'rgba(248, 113, 113, 0.5)', 'rgba(251, 191, 36, 0.5)', 'rgba(167, 139, 250, 0.5)'];
+
+        const datasets = machineLabels.map((mId, idx) => {
+            const samples = dates.map(date => {
+                const dayData = data.find(d => d.work_date === date);
+                return (dayData?.machine_data?.[key] || [])[idx] || 0;
+            }).filter(v => v > 0);
+            
+            const density = getKDE(samples, range);
+            const maxDensity = Math.max(...density) || 1;
+            
+            return {
+                label: mId,
+                data: density.map((v, i) => ({ x: range[i], y: (v / maxDensity) + (idx * 0.5) })), // Ridge Offset
+                borderColor: colors[idx % colors.length].replace('0.5', '1'),
+                backgroundColor: colors[idx % colors.length],
+                fill: true,
+                pointRadius: 0,
+                tension: 0.4
+            };
+        }).reverse(); // 위에서 아래로 쌓이게 역순
+
+        this.state.charts.machineRidge = new Chart(ctx, {
+            type: 'line',
+            data: { datasets },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                scales: {
+                    x: { type: 'linear', grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#94a3b8', callback: v => v.toLocaleString() }, title: { display: true, text: '생산량', color: '#64748b' } },
+                    y: { display: false }
+                },
                 plugins: {
-                    legend: { display: false },
-                    tooltip: {
-                        backgroundColor: 'rgba(15, 23, 42, 0.9)',
-                        titleColor: '#60a5fa'
-                    },
+                    legend: { position: 'right', labels: { color: '#cbd5e1', boxWidth: 10, font: { size: 10 } } },
                     datalabels: { display: false }
                 }
             }
