@@ -606,56 +606,14 @@ class JMLMES {
                 </div>
                 <div class="chart-container" style="height: 380px;"><canvas id="capBoxChart"></canvas></div>
             </div>
-            
-            <div class="section-divider mt-20 mb-15">
-                <div class="section-label">설비 실적 및 안정성 정밀 분석</div>
-                <div class="filter-group-horizontal" id="machine-global-toggle">
-                    <button class="filter-btn ${this.state.machineQualityProcess==='성형'?'active':''}" data-proc="성형">성형 공정</button>
-                    <button class="filter-btn ${this.state.machineQualityProcess==='조립'?'active':''}" data-proc="조립">조립 공정</button>
-                    <button class="filter-btn ${this.state.machineQualityProcess==='포장'?'active':''}" data-proc="포장">포장 공정</button>
-                    <button class="filter-btn ${this.state.machineQualityProcess==='검사'?'active':''}" data-proc="검사">검사 공정</button>
-                </div>
-            </div>
-
-            <div class="card chart-full-width">
-                <div class="card-header">
-                    <h3><i class="fas fa-bolt"></i> [${this.state.machineQualityProcess}] 설비별 가동 효율 분석 (Utility Rate %)</h3>
-                </div>
-                <div class="chart-container" style="height: 300px;"><canvas id="machineEfficiencyChart"></canvas></div>
-            </div>
-
-            <div class="card chart-full-width mt-15">
-                <div class="card-header">
-                    <h3><i class="fas fa-wave-square"></i> [${this.state.machineQualityProcess}] 설비별 생산 안정성 분석 (Violin Plot)</h3>
-                </div>
-                <div class="chart-container" style="height: 350px;"><canvas id="machineViolinChart"></canvas></div>
-            </div>
         `;
 
         this.renderCapBoxChart(data);
-        this.renderMachineEfficiencyChart(data);
-        this.renderMachineViolinChart(data);
 
         document.querySelectorAll('#quality-scale-group .filter-btn, #quality-scale-group button').forEach(btn => {
             btn.onclick = (e) => {
                 this.state.qualityScale = e.target.dataset.scale;
                 this.renderQualityLayout(container, data);
-            };
-        });
-
-        document.querySelectorAll('#machine-global-toggle .filter-btn').forEach(btn => {
-            btn.onclick = (e) => {
-                const process = e.target.dataset.proc;
-                this.state.machineQualityProcess = process;
-                document.querySelectorAll('#machine-global-toggle .filter-btn').forEach(b => b.classList.remove('active'));
-                e.target.classList.add('active');
-                
-                const headers = container.querySelectorAll('.card-header h3');
-                headers[1].innerHTML = `<i class="fas fa-bolt"></i> [${process}] 설비별 가동 효율 분석 (Utility Rate %)`;
-                headers[2].innerHTML = `<i class="fas fa-wave-square"></i> [${process}] 설비별 생산 안정성 분석 (Violin Plot)`;
-                
-                this.renderMachineEfficiencyChart(data);
-                this.renderMachineViolinChart(data);
             };
         });
     }
@@ -1023,12 +981,49 @@ class JMLMES {
 
     renderMachineLayout(container, data) {
         container.innerHTML = `
+            <div class="section-divider mb-15">
+                <div class="section-label">설비 실적 및 안정성 정밀 분석 (원인 추적)</div>
+                <div class="filter-group-horizontal" id="machine-global-toggle">
+                    <button class="filter-btn ${this.state.machineQualityProcess==='성형'?'active':''}" data-proc="성형">성형 공정</button>
+                    <button class="filter-btn ${this.state.machineQualityProcess==='조립'?'active':''}" data-proc="조립">조립 공정</button>
+                    <button class="filter-btn ${this.state.machineQualityProcess==='포장'?'active':''}" data-proc="포장">포장 공정</button>
+                    <button class="filter-btn ${this.state.machineQualityProcess==='검사'?'active':''}" data-proc="검사">검사 공정</button>
+                </div>
+            </div>
+
             <div class="card chart-full-width">
-                <div class="card-header"><h3><i class="fas fa-microchip"></i> 조립 공정 세부 장비별 생산 실적 (M1~M12)</h3></div>
-                <div class="chart-container" style="height: 400px;"><canvas id="deviceCompareChart"></canvas></div>
+                <div class="card-header">
+                    <h3><i class="fas fa-bolt"></i> [${this.state.machineQualityProcess}] 설비별 가동 효율 분석 (Utility Rate %)</h3>
+                </div>
+                <div class="chart-container" style="height: 300px;"><canvas id="machineEfficiencyChart"></canvas></div>
+            </div>
+
+            <div class="card chart-full-width mt-15">
+                <div class="card-header">
+                    <h3><i class="fas fa-wave-square"></i> [${this.state.machineQualityProcess}] 설비별 생산 안정성 분석 (Violin Plot)</h3>
+                </div>
+                <div class="chart-container" style="height: 350px;"><canvas id="machineViolinChart"></canvas></div>
             </div>
         `;
-        this.renderDeviceCompareChart(data);
+        
+        this.renderMachineEfficiencyChart(data);
+        this.renderMachineViolinChart(data);
+
+        document.querySelectorAll('#machine-global-toggle .filter-btn').forEach(btn => {
+            btn.onclick = (e) => {
+                const process = e.target.dataset.proc;
+                this.state.machineQualityProcess = process;
+                document.querySelectorAll('#machine-global-toggle .filter-btn').forEach(b => b.classList.remove('active'));
+                e.target.classList.add('active');
+                
+                const headers = container.querySelectorAll('.card-header h3');
+                headers[0].innerHTML = `<i class="fas fa-bolt"></i> [${process}] 설비별 가동 효율 분석 (Utility Rate %)`;
+                headers[1].innerHTML = `<i class="fas fa-wave-square"></i> [${process}] 설비별 생산 안정성 분석 (Violin Plot)`;
+                
+                this.renderMachineEfficiencyChart(data);
+                this.renderMachineViolinChart(data);
+            };
+        });
     }
 
     renderDeviceCompareChart(data) {
