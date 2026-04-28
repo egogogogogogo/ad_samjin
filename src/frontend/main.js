@@ -362,18 +362,38 @@ class JMLMES {
             const topDefect = Object.entries(defectCounts).sort((a, b) => b[1] - a[1])[0];
             const defectStr = topDefect ? `가장 심각한 불량 유형은 [${topDefect[0]}](${topDefect[1]}건)입니다.` : '현재 검출된 주요 불량이 없습니다.';
             
-            const moldingParam = this.state.config?.simParams?.[0];
-            const assemblyParam = this.state.config?.simParams?.[1];
-            let loadStr = '';
-            if (moldingParam && assemblyParam) {
-                const moldingDailyCapa = moldingParam.dailyCapa || (moldingParam.timeCapa * moldingParam.runTime * moldingParam.machines) || 1;
-                const assemblyDailyCapa = assemblyParam.dailyCapa || (assemblyParam.timeCapa * assemblyParam.runTime * assemblyParam.machines) || 1;
-                const moldingLoad = Math.round((s.molding / (moldingDailyCapa * (data.length || 1))) * 100);
-                const assemblyLoad = Math.round((s.assembly / (assemblyDailyCapa * (data.length || 1))) * 100);
-                loadStr = moldingLoad > assemblyLoad ? `성형 공정 부하율이 ${moldingLoad}%로 가장 높아 병목 관리가 필요합니다.` : `조립 공정 부하율(${assemblyLoad}%) 관리가 시급합니다.`;
+            // 도넛 차트 (생산 부하 비중) 계산
+            const totalProd = s.molding + s.assembly + s.packing + s.inspection;
+            const shares = {
+                '성형': Math.round((s.molding / (totalProd || 1)) * 100),
+                '조립': Math.round((s.assembly / (totalProd || 1)) * 100),
+                '포장': Math.round((s.packing / (totalProd || 1)) * 100),
+                '검사': Math.round((s.inspection / (totalProd || 1)) * 100)
+            };
+            const topShare = Object.entries(shares).sort((a, b) => b[1] - a[1])[0];
+            const shareStr = topShare && topShare[1] > 0 ? `생산 비중은 [${topShare[0]}] 공정이 ${topShare[1]}%로 가장 높습니다.` : '';
+            
+            // 막대 차트 (Capa 대비 실적 현황) 계산
+            let capaStr = '';
+            if (this.state.config?.simParams && this.state.config.simParams.length >= 4) {
+                const p = this.state.config.simParams;
+                const getDaily = (idx) => p[idx] ? (p[idx].timeCapa * p[idx].runTime * p[idx].machines) || 1 : 1;
+                const dLen = data.length || 1;
+                const perf = {
+                    '성형': Math.round((s.molding / (getDaily(0) * dLen)) * 100),
+                    '조립': Math.round((s.assembly / (getDaily(1) * dLen)) * 100),
+                    '포장': Math.round((s.packing / (getDaily(2) * dLen)) * 100),
+                    '검사': Math.round((s.inspection / (getDaily(3) * dLen)) * 100)
+                };
+                
+                const sortedPerf = Object.entries(perf).sort((a, b) => b[1] - a[1]);
+                const topCapa = sortedPerf[0];
+                const bottomCapa = sortedPerf[3];
+                
+                capaStr = `Capa 실적은 [${topCapa[0]}] 공정이 ${topCapa[1]}%로 가장 높고, [${bottomCapa[0]}] 공정이 ${bottomCapa[1]}%로 저조합니다.`;
             }
 
-            msg = `[종합 요약 분석] 현재 PPM(${ppm.toLocaleString()})은 ${ppm > 500 ? '경고' : '안정'} 수준입니다. ${defectStr} ${loadStr}`;
+            msg = `[종합 요약 분석] 현재 PPM(${ppm.toLocaleString()})은 ${ppm > 500 ? '경고' : '안정'} 수준입니다. ${defectStr} ${shareStr} ${capaStr}`;
             
         } else if (sub === 'quality') {
             const allSamples = data.flatMap(d => {
