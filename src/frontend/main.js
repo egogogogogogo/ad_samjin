@@ -634,15 +634,27 @@ class JMLMES {
         this.renderMachineViolinChart(data);
     }
 
+    groupDataByScale(data, scale) {
+        const groups = {};
+        data.forEach(d => {
+            let key = d.work_date;
+            if (scale === 'weekly') key = this.getISOWeekString(d.work_date);
+            else if (scale === 'monthly') key = d.work_date.slice(0, 7);
+            if (!groups[key]) groups[key] = [];
+            groups[key].push(d);
+        });
+        return groups;
+    }
+
     renderCapBoxChart(data) {
         const canvas = document.getElementById('capBoxChart');
+        if (!canvas) return;
         const ctx = canvas.getContext('2d');
         if (this.state.charts.capBox) this.state.charts.capBox.destroy();
 
         const scale = this.state.qualityScale;
         const mode = this.state.dateMode;
         const selected = this.state.selectedDate;
-        const groups = {};
 
         // 1. 라벨 사전 생성 (모든 모드에서 전체 기간 확보)
         let labels = [];
