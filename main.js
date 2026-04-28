@@ -316,8 +316,8 @@ class JMLMES {
                 return 'status-danger';
             }
             if (type === 'ppm') {
-                if (val <= ppmLimit) return 'status-success';
-                if (val <= ppmLimit * 1.5) return 'status-warning';
+                if (val <= ppmLimit * 0.9) return 'status-success';
+                if (val <= ppmLimit) return 'status-warning';
                 return 'status-danger';
             }
             return '';
