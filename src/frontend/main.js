@@ -904,6 +904,18 @@ class JMLMES {
         gradient.addColorStop(0, `rgba(${this.hexToRgb(procColor)}, 0.4)`);
         gradient.addColorStop(1, 'rgba(255, 255, 255, 0.05)');
 
+        // 대안 A: IQR 기반 통계적 줌인 알고리즘
+        const allVals = machineGroups.flat().filter(v => v > 0).sort((a, b) => a - b);
+        let yMin = 0, yMax = undefined;
+        if (allVals.length > 4) {
+            const q1 = allVals[Math.floor(allVals.length * 0.25)];
+            const q3 = allVals[Math.floor(allVals.length * 0.75)];
+            const iqr = q3 - q1;
+            // 분포(통통한 부분)를 가장 잘 보여주기 위해 2.0 IQR 마진 적용
+            yMin = Math.max(0, Math.floor(q1 - 2.0 * iqr));
+            yMax = Math.ceil(q3 + 2.0 * iqr);
+        }
+
         this.state.charts.machineViolin = new Chart(ctx, {
             type: 'violin',
             data: {
@@ -921,7 +933,12 @@ class JMLMES {
             options: {
                 responsive: true, maintainAspectRatio: false,
                 scales: {
-                    y: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#94a3b8' } },
+                    y: { 
+                        min: yMin, 
+                        max: yMax, // 이상치를 렌더링 영역 밖으로 밀어냄
+                        grid: { color: 'rgba(255,255,255,0.05)' }, 
+                        ticks: { color: '#94a3b8' } 
+                    },
                     x: { grid: { display: false }, ticks: { color: '#cbd5e1' } }
                 },
                 plugins: {
