@@ -590,22 +590,27 @@ class JMLMES {
                 <div class="chart-container" style="height: 350px;"><canvas id="capBoxChart"></canvas></div>
             </div>
             
-            <div class="card chart-full-width mt-15">
+            <!-- 통합 공정 선택 바 -->
+            <div class="section-divider mt-20 mb-15">
+                <div class="section-label">설비 실적 및 안정성 정밀 분석</div>
+                <div class="filter-group-horizontal" id="machine-global-toggle">
+                    <button class="filter-btn ${this.state.machineQualityProcess==='성형'?'active':''}" data-proc="성형">성형 공정</button>
+                    <button class="filter-btn ${this.state.machineQualityProcess==='조립'?'active':''}" data-proc="조립">조립 공정</button>
+                    <button class="filter-btn ${this.state.machineQualityProcess==='포장'?'active':''}" data-proc="포장">포장 공정</button>
+                    <button class="filter-btn ${this.state.machineQualityProcess==='검사'?'active':''}" data-proc="검사">검사 공정</button>
+                </div>
+            </div>
+
+            <div class="card chart-full-width">
                 <div class="card-header">
-                    <h3><i class="fas fa-bolt"></i> 설비별 가동 효율 분석 (Utility Rate %)</h3>
-                    <div class="filter-group-horizontal" id="machine-efficiency-toggle">
-                        <button class="filter-btn ${this.state.machineQualityProcess==='성형'?'active':''}" data-proc="성형">성형</button>
-                        <button class="filter-btn ${this.state.machineQualityProcess==='조립'?'active':''}" data-proc="조립">조립</button>
-                        <button class="filter-btn ${this.state.machineQualityProcess==='포장'?'active':''}" data-proc="포장">포장</button>
-                        <button class="filter-btn ${this.state.machineQualityProcess==='검사'?'active':''}" data-proc="검사">검사</button>
-                    </div>
+                    <h3><i class="fas fa-bolt"></i> [${this.state.machineQualityProcess}] 설비별 가동 효율 분석 (Utility Rate %)</h3>
                 </div>
                 <div class="chart-container" style="height: 300px;"><canvas id="machineEfficiencyChart"></canvas></div>
             </div>
 
             <div class="card chart-full-width mt-15">
                 <div class="card-header">
-                    <h3><i class="fas fa-chart-line"></i> 설비별 생산 안정성 트렌드 (Stability Trend)</h3>
+                    <h3><i class="fas fa-chart-bar"></i> [${this.state.machineQualityProcess}] 설비별 생산 안정성 분석 (Stability Box-Plot)</h3>
                 </div>
                 <div class="chart-container" style="height: 350px;"><canvas id="machineStabilityChart"></canvas></div>
             </div>
@@ -618,7 +623,7 @@ class JMLMES {
             };
         });
 
-        document.querySelectorAll('#machine-efficiency-toggle .filter-btn').forEach(btn => {
+        document.querySelectorAll('#machine-global-toggle .filter-btn').forEach(btn => {
             btn.onclick = (e) => {
                 this.state.machineQualityProcess = e.target.dataset.proc;
                 this.renderQualityLayout(container, data);
@@ -886,36 +891,54 @@ class JMLMES {
         const machineLabels = Array.from({length: machineCount}, (_, i) => `${process.slice(0,1)}${i+1}`);
         
         const dates = [...new Set(data.map(d => d.work_date))].sort();
-        const colors = ['#60a5fa', '#34d399', '#f87171', '#fbbf24', '#a78bfa', '#fb7185', '#22d3ee', '#818cf8', '#f472b6', '#fb923c', '#94a3b8', '#5eead4'];
 
-        const datasets = machineLabels.map((mId, idx) => {
-            return {
-                label: mId,
-                data: dates.map(date => {
-                    const dayData = data.find(d => d.work_date === date);
-                    const details = dayData?.machine_data?.[key] || [];
-                    return details[idx] || 0;
-                }),
-                borderColor: colors[idx % colors.length],
-                borderWidth: 2,
-                pointRadius: 1,
-                tension: 0.3,
-                fill: false
-            };
+        // 설비별 일일 생산량 데이터 집계 (Box-Plot용)
+        const machineGroups = machineLabels.map((mId, idx) => {
+            const samples = dates.map(date => {
+                const dayData = data.find(d => d.work_date === date);
+                const details = dayData?.machine_data?.[key] || [];
+                return details[idx] || 0;
+            }).filter(v => v > 0); // 0(비가동) 제외하고 실제 가동일의 산포 확인
+            return samples;
         });
 
+        // 박스플롯 컬러 그라데이션
+        const boxGradient = ctx.createLinearGradient(0, 0, 0, 400);
+        boxGradient.addColorStop(0, 'rgba(96, 165, 250, 0.4)');
+        boxGradient.addColorStop(1, 'rgba(59, 130, 246, 0.1)');
+
         this.state.charts.machineStab = new Chart(ctx, {
-            type: 'line',
-            data: { labels: dates, datasets },
+            type: 'boxplot',
+            data: {
+                labels: machineLabels,
+                datasets: [{
+                    label: `${process} 설비별 생산 안정성`,
+                    data: machineGroups,
+                    backgroundColor: boxGradient,
+                    borderColor: '#60a5fa',
+                    borderWidth: 1.5,
+                    outlierBackgroundColor: '#f43f5e',
+                    itemRadius: 0,
+                    medianColor: '#ffffff'
+                }]
+            },
             options: {
                 responsive: true, maintainAspectRatio: false,
-                interaction: { mode: 'index', intersect: false },
                 scales: {
-                    y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#94a3b8' } },
-                    x: { grid: { display: false }, ticks: { color: '#94a3b8', maxRotation: 45, minRotation: 45, font: { size: 9 } } }
+                    y: { 
+                        beginAtZero: true, 
+                        grid: { color: 'rgba(255, 255, 255, 0.05)' }, 
+                        ticks: { color: '#94a3b8' },
+                        title: { display: true, text: '일일 생산량', color: '#64748b' }
+                    },
+                    x: { grid: { display: false }, ticks: { color: '#cbd5e1' } }
                 },
                 plugins: {
-                    legend: { position: 'top', labels: { color: '#cbd5e1', boxWidth: 8, font: { size: 9 } } },
+                    legend: { display: false },
+                    tooltip: {
+                        backgroundColor: 'rgba(15, 23, 42, 0.9)',
+                        titleColor: '#60a5fa'
+                    },
                     datalabels: { display: false }
                 }
             }
