@@ -504,7 +504,8 @@ class JMLMES {
         }, { m:0, a:0, p:0, i:0 });
         this.state.charts.process = new Chart(ctx, {
             type: 'doughnut',
-            data: { labels: ['성형', '조립', '포장', '검사'], datasets: [{ data: [s.m, s.a, s.p, s.i], backgroundColor: ['#3b82f6', '#818cf8', '#6366f1', '#10b981'] }] },
+            // 성형(Blue), 조립(Yellow), 포장(Purple), 검사(Green) 고유 색상 적용
+            data: { labels: ['성형', '조립', '포장', '검사'], datasets: [{ data: [s.m, s.a, s.p, s.i], backgroundColor: ['#3b82f6', '#fbbf24', '#8b5cf6', '#10b981'] }] },
             plugins: [ChartDataLabels],
             options: { 
                 responsive: true, maintainAspectRatio: false, cutout: '70%', 
@@ -541,6 +542,8 @@ class JMLMES {
         }, { '성형': 0, '조립': 0, '포장': 0, '검사': 0 });
 
         const labels = ['성형', '조립', '포장', '검사'];
+        const baseColors = ['#3b82f6', '#fbbf24', '#8b5cf6', '#10b981']; // 공정 고유 색상
+        
         const perfData = labels.map(l => {
             const param = this.state.config.simParams?.find(p => p.process === l) || { timeCapa: 550, runTime: 20, machines: 5, days: 25 };
             const dailyCapa = (param.timeCapa || 550) * (param.runTime || 20) * (param.machines || 5);
@@ -555,11 +558,15 @@ class JMLMES {
                 datasets: [{ 
                     label: 'Capa 대비 실적 (%)', 
                     data: perfData, 
-                    backgroundColor: perfData.map(v => v < 70 ? '#ef4444' : (v < 90 ? '#fbbf24' : '#10b981')),
+                    // 대안 A: 바탕은 공정 고유 색상, 경고는 테두리로 강력하게 표시
+                    backgroundColor: baseColors.map(c => `rgba(${this.hexToRgb(c) || '59, 130, 246'}, 0.8)`),
+                    borderColor: perfData.map((v, i) => v < 70 ? '#ef4444' : (v < 90 ? '#eab308' : baseColors[i])),
+                    borderWidth: perfData.map(v => v < 90 ? 3 : 1),
                     borderRadius: 6
                 }] 
             },
             plugins: [ChartDataLabels],
+
             options: { 
                 indexAxis: 'y', 
                 responsive: true, 
