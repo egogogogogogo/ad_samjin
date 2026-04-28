@@ -579,7 +579,15 @@ class JMLMES {
                 },
                 plugins: {
                     datalabels: { anchor: 'end', align: 'right', formatter: v => v + '%', color: '#fff', font: { weight: 'bold', size: 12 } },
-                    legend: { display: false }
+                    legend: { display: false },
+                    subtitle: {
+                        display: true,
+                        align: 'end',
+                        color: '#94a3b8',
+                        font: { size: 11, weight: 'normal' },
+                        padding: { bottom: 10 },
+                        text: '범례(테두리): 🔴 70% 미만 (위험) | 🟡 90% 미만 (주의) | 🟢 90% 이상 (정상)'
+                    }
                 }
             }
         });
@@ -849,7 +857,15 @@ class JMLMES {
                 },
                 plugins: {
                     legend: { display: false },
-                    datalabels: { display: true, align: 'end', anchor: 'end', formatter: v => v + '%', color: '#fff' }
+                    datalabels: { display: true, align: 'end', anchor: 'end', formatter: v => v + '%', color: '#fff' },
+                    subtitle: {
+                        display: true,
+                        align: 'end',
+                        color: '#94a3b8',
+                        font: { size: 11, weight: 'normal' },
+                        padding: { bottom: 10 },
+                        text: '범례(바 색상): 🔴 70% 미만 (위험) | 🟡 90% 미만 (주의) | 🟢 90% 이상 (정상)'
+                    }
                 }
             }
         });
