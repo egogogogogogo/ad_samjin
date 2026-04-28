@@ -1096,7 +1096,7 @@ class JMLMES {
                 
                 this.renderMachineEfficiencyChart(data);
                 this.renderMachineViolinChart(data);
-                this.updateAIInsight(data, 'machine'); // AI 리포트 즉각 동기화 추가
+                this.renderAIInsight(data); // 정상적인 AI 렌더링 함수 호출
             };
         });
     }
