@@ -328,8 +328,8 @@ class JMLMES {
 
         document.getElementById('kpi-container').innerHTML = `
             <div class="kpi-card ${achieveStatus}"><div class="label">생산 달성률</div><div class="value">${achieve}%</div></div>
-            <div class="kpi-card ${ppmStatus}"><div class="label">품질 (PPM)</div><div class="value">${ppm.toLocaleString()}</div></div>
             <div class="kpi-card ${achieveStatus}"><div class="label">누적 실적</div><div class="value">${s.actual.toLocaleString()}</div></div>
+            <div class="kpi-card ${ppmStatus}"><div class="label">품질 (PPM)</div><div class="value">${ppm.toLocaleString()}</div></div>
             <div class="kpi-card ${ppmStatus}"><div class="label">총 불량수</div><div class="value">${s.defect.toLocaleString()}</div></div>
         `;
     }
