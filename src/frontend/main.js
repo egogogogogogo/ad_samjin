@@ -691,44 +691,19 @@ class JMLMES {
 
         // 2. 데이터 그룹화
         data.forEach(d => {
-            if (!(d.cap_pull_off > 0)) return;
-            let key = d.work_date;
-            if (scale === 'weekly') key = this.getISOWeekString(d.work_date);
-            else if (scale === 'monthly') key = d.work_date.slice(0, 7);
-
-            if (!groups[key]) groups[key] = { samples: [] };
-            if (d.quality_samples && Array.isArray(d.quality_samples)) {
-                groups[key].samples.push(...d.quality_samples.filter(v => v > 0));
-            } else {
-                groups[key].samples.push(d.cap_pull_off || 0);
-            }
-        });
-
-        if (labels.length === 0) labels = Object.keys(groups).sort();
-        if (labels.length === 0) return;
-
-        // 3. 데이터 및 통계치 산출 (방어적 설계)
-        const boxData = labels.map(k => (groups[k] && groups[k].samples.length) ? groups[k].samples : []);
-        const medians = labels.map(k => {
-            if (!groups[k] || !groups[k].samples.length) return null;
-            const s = [...groups[k].samples].sort((a,b)=>a-b);
+        const grouped = this.groupDataByScale(data, this.state.qualityScale);
+        const labels = Object.keys(grouped).sort();
+        const boxData = labels.map(label => grouped[label].map(d => d.cap_pull_off).filter(v => v > 0));
+        const medians = labels.map(label => {
+            const s = grouped[label].map(d => d.cap_pull_off).filter(v => v > 0).sort((a,b)=>a-b);
+            if (s.length === 0) return null;
             const mid = Math.floor(s.length/2);
-            return s.length % 2 !== 0 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+            return s.length % 2 !== 0 ? s[mid] : (s[mid-1] + s[mid]) / 2;
         });
 
-        // 4. 안전한 스케일(Y축 범위) 계산
-        const allSamples = labels.flatMap(k => (groups[k] && groups[k].samples) ? groups[k].samples : []);
-        let minVal = 420, maxVal = 460; // 기본 범위
-        if (allSamples.length > 0) {
-            minVal = Math.min(...allSamples, 420);
-            maxVal = Math.max(...allSamples, 460);
-        }
-        const padding = (maxVal - minVal) * 0.2 || 10;
-
-        // 프리미엄 그라데이션
-        const boxGradient = ctx.createLinearGradient(0, 0, 0, 300);
-        boxGradient.addColorStop(0, 'rgba(34, 211, 238, 0.4)');
-        boxGradient.addColorStop(1, 'rgba(34, 211, 238, 0.05)');
+        const boxGradient = ctx.createLinearGradient(0, 0, 0, 400);
+        boxGradient.addColorStop(0, 'rgba(251, 191, 36, 0.4)');
+        boxGradient.addColorStop(1, 'rgba(251, 191, 36, 0.05)');
 
         this.state.charts.capBox = new Chart(ctx, {
             data: {
@@ -738,13 +713,12 @@ class JMLMES {
                         label: '품질 트렌드 (중앙값)',
                         type: 'line',
                         data: medians,
-                        borderColor: '#ffffff', // High contrast white
+                        borderColor: '#ffffff',
                         borderWidth: 3,
-                        pointBackgroundColor: '#ffffff',
-                        pointBorderColor: '#22d3ee',
+                        pointBackgroundColor: '#fbbf24',
+                        pointBorderColor: '#ffffff',
                         pointBorderWidth: 2,
                         pointRadius: 4,
-                        pointHoverRadius: 7,
                         tension: 0.4,
                         z: 10
                     },
@@ -753,10 +727,9 @@ class JMLMES {
                         type: 'boxplot',
                         data: boxData,
                         backgroundColor: boxGradient,
-                        borderColor: '#22d3ee',
-                        borderWidth: 1.5,
+                        borderColor: '#fbbf24',
+                        borderWidth: 2,
                         outlierBackgroundColor: '#f43f5e',
-                        outlierRadius: 3,
                         itemRadius: 0,
                         medianColor: 'transparent',
                         z: 1
@@ -765,9 +738,9 @@ class JMLMES {
                         label: '품질 하한선 (420N)',
                         type: 'line',
                         data: Array(labels.length).fill(420),
-                        borderColor: 'rgba(244, 63, 94, 0.6)',
-                        borderDash: [6, 4],
-                        borderWidth: 1.5,
+                        borderColor: 'rgba(239, 68, 68, 0.5)',
+                        borderDash: [5, 5],
+                        borderWidth: 2,
                         pointRadius: 0,
                         fill: false,
                         z: 5
@@ -775,43 +748,19 @@ class JMLMES {
                 ]
             },
             options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                layout: { padding: { top: 10, bottom: 10 } },
+                responsive: true, maintainAspectRatio: false,
                 scales: {
                     y: { 
-                        min: Math.floor(minVal - padding),
-                        max: Math.ceil(maxVal + padding),
-                        grid: { color: 'rgba(255, 255, 255, 0.04)', drawBorder: false },
-                        ticks: { color: '#94a3b8', font: { family: 'IBM Plex Mono', size: 11 } }
+                        min: 390, max: 480,
+                        grid: { color: 'rgba(255,255,255,0.05)' }, 
+                        ticks: { color: '#94a3b8' } 
                     },
-                    x: { 
-                        grid: { display: false },
-                        ticks: { color: '#94a3b8', font: { size: 11 } }
-                    }
+                    x: { grid: { display: false }, ticks: { color: '#cbd5e1' } }
                 },
                 plugins: {
-                    legend: { 
-                        position: 'top', 
-                        align: 'end',
-                        labels: { color: '#cbd5e1', usePointStyle: true, boxWidth: 8, font: { size: 12 } } 
-                    },
-                    tooltip: {
-                        backgroundColor: 'rgba(15, 23, 42, 0.9)',
-                        titleColor: '#60a5fa',
-                        bodyColor: '#fff',
-                        borderColor: 'rgba(255,255,255,0.1)',
-                        borderWidth: 1,
-                        padding: 12,
-                        boxPadding: 6,
-                        callbacks: {
-                            label: (ctx) => {
-                                if (ctx.dataset.type === 'line') return `${ctx.dataset.label}: ${ctx.raw}N`;
-                                const s = ctx.raw;
-                                return [`MAX: ${s.max}N`, `Q3: ${s.q3}N`, `MEDIAN: ${s.median}N`, `Q1: ${s.q1}N`, `MIN: ${s.min}N`].join(' | ');
-                            }
-                        }
-                    }
+                    legend: { display: false },
+                    tooltip: { backgroundColor: 'rgba(15, 23, 42, 0.9)', titleColor: '#fbbf24' },
+                    datalabels: { display: false }
                 }
             }
         });
@@ -829,10 +778,10 @@ class JMLMES {
         const key = mapping[process];
         const procColor = colors[process] || '#60a5fa';
         
-        const param = this.state.config.simParams?.find(p => p.process === process) || { timeCapa: 500, runTime: 20 };
+        const param = (this.state.config?.simParams || []).find(p => p.process === process) || { timeCapa: 500, runTime: 20 };
         const dailyMachineCapa = (param.timeCapa || 500) * (param.runTime || 20);
-        const days = new Set(data.map(d => d.work_date)).size || 1;
-        const totalMachineCapa = dailyMachineCapa * days;
+        const uniqueDates = [...new Set(data.map(d => d.work_date))];
+        const totalMachineCapa = dailyMachineCapa * (uniqueDates.length || 1);
 
         const counts = { '성형': 5, '조립': 12, '포장': 4, '검사': 3 };
         const machineCount = counts[process] || 5;
@@ -842,11 +791,12 @@ class JMLMES {
         data.forEach(d => {
             const details = d.machine_data?.[key] || [];
             details.forEach((val, idx) => {
-                if (idx < machineCount) machineSums[idx] += (val || 0);
+                if (idx < machineCount) machineSums[idx] += (Number(val) || 0);
             });
         });
 
-        // 글래스모피즘 입체 막대 디자인
+        const efficiencyData = machineSums.map(sum => totalMachineCapa > 0 ? Math.round((sum / totalMachineCapa) * 100) : 0);
+
         this.state.charts.machineEff = new Chart(ctx, {
             type: 'bar',
             data: {
@@ -855,14 +805,13 @@ class JMLMES {
                     label: '가동 효율 (%)',
                     data: efficiencyData,
                     backgroundColor: efficiencyData.map(v => {
-                        if (v < 70) return 'rgba(239, 68, 68, 0.6)'; // Danger
-                        if (v < 90) return 'rgba(234, 179, 8, 0.6)';  // Warning
-                        return `rgba(${this.hexToRgb(procColor)}, 0.6)`; // Success (Process Color)
+                        if (v < 70) return 'rgba(239, 68, 68, 0.6)';
+                        if (v < 90) return 'rgba(234, 179, 8, 0.6)';
+                        return '#60a5fa';
                     }),
                     borderColor: efficiencyData.map(v => v < 70 ? '#ef4444' : (v < 90 ? '#eab308' : procColor)),
                     borderWidth: 2,
-                    borderRadius: 8,
-                    borderSkipped: false
+                    borderRadius: 8
                 }]
             },
             options: {
@@ -870,19 +819,14 @@ class JMLMES {
                 responsive: true, maintainAspectRatio: false,
                 scales: {
                     x: { max: 120, grid: { color: 'rgba(255,255,255,0.03)' }, ticks: { color: '#64748b' } },
-                    y: { grid: { display: false }, ticks: { color: '#cbd5e1', font: { weight: 'bold' } } }
+                    y: { grid: { display: false }, ticks: { color: '#cbd5e1' } }
                 },
                 plugins: {
                     legend: { display: false },
-                    datalabels: { display: true, align: 'end', anchor: 'end', formatter: v => v + '%', color: '#fff', font: { weight: 'bold', size: 11 } }
+                    datalabels: { display: true, align: 'end', anchor: 'end', formatter: v => v + '%', color: '#fff' }
                 }
             }
         });
-    }
-
-    hexToRgb(hex) {
-        const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-        return result ? `${parseInt(result[1], 16)}, ${parseInt(result[2], 16)}, ${parseInt(result[3], 16)}` : '96, 165, 250';
     }
 
     renderMachineViolinChart(data) {
@@ -900,16 +844,6 @@ class JMLMES {
         const counts = { '성형': 5, '조립': 12, '포장': 4, '검사': 3 };
         const machineCount = counts[process] || 5;
         const machineLabels = Array.from({length: machineCount}, (_, i) => `${process.slice(0,1)}${i+1}`);
-        const dates = [...new Set(data.map(d => d.work_date))].sort();
-
-        const machineGroups = machineLabels.map((mId, idx) => {
-            return dates.map(date => {
-                const dayData = data.find(d => d.work_date === date);
-                return (dayData?.machine_data?.[key] || [])[idx] || 0;
-            }).filter(v => v > 0);
-        });
-
-        // 공정별 고유 컬러 모티프 그라데이션
         const gradient = ctx.createLinearGradient(0, 0, 0, 400);
         gradient.addColorStop(0, `rgba(${this.hexToRgb(procColor)}, 0.5)`);
         gradient.addColorStop(1, `rgba(${this.hexToRgb(procColor)}, 0.05)`);
