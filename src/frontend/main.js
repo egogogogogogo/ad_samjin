@@ -347,7 +347,7 @@ class JMLMES {
             acc.molding += (curr.molding_qty || 0);
             acc.assembly += (curr.assembly_qty || 0);
             acc.packing += (curr.packing_qty || 0);
-            acc.inspection += (curr.inspection_qty || 0);
+            acc.inspection += (curr.actual_qty || 0); // 검사 공정 실적은 최종생산량(actual_qty) 사용
             return acc;
         }, { actual: 0, defect: 0, molding: 0, assembly: 0, packing: 0, inspection: 0 });
         const ppm = s.actual ? Math.round((s.defect / s.actual) * 1e6) : 0;
@@ -380,7 +380,8 @@ class JMLMES {
             if (this.state.config?.simParams && this.state.config.simParams.length >= 4) {
                 const p = this.state.config.simParams;
                 const getDaily = (idx) => p[idx] ? (p[idx].timeCapa * p[idx].runTime * p[idx].machines) || 1 : 1;
-                const dLen = data.length || 1;
+                // 차트와 동일하게 중복 날짜를 제거한 고유 작업 일수 산출
+                const dLen = new Set(data.map(d => d.work_date)).size || 1;
                 const perf = {
                     '성형': Math.round((s.molding / (getDaily(0) * dLen)) * 100),
                     '조립': Math.round((s.assembly / (getDaily(1) * dLen)) * 100),
