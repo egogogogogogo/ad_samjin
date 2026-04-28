@@ -607,19 +607,11 @@ class JMLMES {
                 <div class="chart-container" style="height: 300px;"><canvas id="machineEfficiencyChart"></canvas></div>
             </div>
 
-            <div class="chart-row-split mt-15">
-                <div class="card chart-half-width">
-                    <div class="card-header">
-                        <h3><i class="fas fa-wave-square"></i> [비교 1] 바이올린 플롯 (Violin Plot)</h3>
-                    </div>
-                    <div class="chart-container" style="height: 400px;"><canvas id="machineViolinChart"></canvas></div>
+            <div class="card chart-full-width mt-15">
+                <div class="card-header">
+                    <h3><i class="fas fa-wave-square"></i> [${this.state.machineQualityProcess}] 설비별 생산 안정성 분석 (Violin Plot)</h3>
                 </div>
-                <div class="card chart-half-width">
-                    <div class="card-header">
-                        <h3><i class="fas fa-mountain"></i> [비교 2] 릿지 플롯 (Ridge Plot)</h3>
-                    </div>
-                    <div class="chart-container" style="height: 400px;"><canvas id="machineRidgeChart"></canvas></div>
-                </div>
+                <div class="chart-container" style="height: 400px;"><canvas id="machineViolinChart"></canvas></div>
             </div>
         `;
 
@@ -640,7 +632,6 @@ class JMLMES {
         this.renderCapBoxChart(data);
         this.renderMachineEfficiencyChart(data);
         this.renderMachineViolinChart(data);
-        this.renderMachineRidgeChart(data);
     }
 
     renderCapBoxChart(data) {
