@@ -346,8 +346,10 @@ class JMLMES {
             acc.defect += (curr.defect_qty || 0);
             acc.molding += (curr.molding_qty || 0);
             acc.assembly += (curr.assembly_qty || 0);
+            acc.packing += (curr.packing_qty || 0);
+            acc.inspection += (curr.inspection_qty || 0);
             return acc;
-        }, { actual: 0, defect: 0, molding: 0, assembly: 0 });
+        }, { actual: 0, defect: 0, molding: 0, assembly: 0, packing: 0, inspection: 0 });
         const ppm = s.actual ? Math.round((s.defect / s.actual) * 1e6) : 0;
 
         if (sub === 'total') {
@@ -393,7 +395,7 @@ class JMLMES {
                 capaStr = `Capa 실적은 [${topCapa[0]}] 공정이 ${topCapa[1]}%로 가장 높고, [${bottomCapa[0]}] 공정이 ${bottomCapa[1]}%로 저조합니다.`;
             }
 
-            msg = `[종합 요약 분석] 현재 PPM(${ppm.toLocaleString()})은 ${ppm > 500 ? '경고' : '안정'} 수준입니다. ${defectStr} ${shareStr} ${capaStr}`;
+            msg = `[종합 요약 분석]\n• 현재 PPM(${ppm.toLocaleString()})은 ${ppm > 500 ? '경고' : '안정'} 수준입니다.\n• ${defectStr}\n• ${shareStr}\n• ${capaStr}`;
             
         } else if (sub === 'quality') {
             const allSamples = data.flatMap(d => {
@@ -406,14 +408,14 @@ class JMLMES {
                 const under400 = allSamples.filter(v => v < 400).length;
                 const underRate = ((under400 / allSamples.length) * 100).toFixed(1);
                 
-                msg = `[품질/공정 분석] 탈거력 전체 평균은 ${avg}N 입니다. `;
+                msg = `[품질/공정 분석]\n• 탈거력 전체 평균은 ${avg}N 입니다.\n`;
                 if (under400 > 0) {
-                    msg += `⚠️ 주의: 기준치(400N) 미달 위험 샘플이 총 ${under400}건(${underRate}%) 검출되어 공정 산포 관리가 시급합니다.`;
+                    msg += `• ⚠️ 주의: 기준치(400N) 미달 위험 샘플이 총 ${under400}건(${underRate}%) 검출되어 공정 산포 관리가 시급합니다.`;
                 } else {
-                    msg += `✅ 양호: 전수 샘플이 품질 기준치(400N)를 안정적으로 초과 달성 중입니다.`;
+                    msg += `• ✅ 양호: 전수 샘플이 품질 기준치(400N)를 안정적으로 초과 달성 중입니다.`;
                 }
             } else {
-                msg = `[품질/공정 분석] 품질(탈거력) 샘플 데이터가 존재하지 않습니다.`;
+                msg = `[품질/공정 분석]\n• 품질(탈거력) 샘플 데이터가 존재하지 않습니다.`;
             }
             
         } else if (sub === 'machine') {
@@ -429,7 +431,6 @@ class JMLMES {
                 for(let i=0; i<mCount; i++) totalPerMachine[i] += (mData[i] || 0);
             });
             const processParam = this.state.config?.simParams?.find(p => p.process === process);
-            // 하루 목표량 (시간당Capa * 런타임)
             const dailyCap = processParam ? (processParam.timeCapa * processParam.runTime) : 10000;
             const targetTotal = dailyCap * (data.length || 1);
             
@@ -442,10 +443,10 @@ class JMLMES {
                 effArray.sort((a, b) => a.eff - b.eff);
                 const worst = effArray[0];
                 const best = effArray[effArray.length - 1];
-                msg = `[설비/계획 분석] ${process} 공정 진단: [${worst.name}]의 가동 효율이 ${worst.eff}%로 가장 저조하여 병목 원인으로 추정됩니다. (최고 효율: ${best.name} ${best.eff}%)`;
-                if (worst.eff < 70) msg += ` 🚨 70% 미만 위험 설비에 대한 즉각적인 점검이 필요합니다.`;
+                msg = `[설비/계획 분석] ${process} 공정 진단\n• [${worst.name}]의 가동 효율이 ${worst.eff}%로 가장 저조하여 병목 원인으로 추정됩니다.\n• (최고 효율: ${best.name} ${best.eff}%)`;
+                if (worst.eff < 70) msg += `\n• 🚨 70% 미만 위험 설비에 대한 즉각적인 점검이 필요합니다.`;
             } else {
-                msg = `[설비/계획 분석] 선택된 ${process} 공정의 설비 가동 데이터가 없습니다.`;
+                msg = `[설비/계획 분석]\n• 선택된 ${process} 공정의 설비 가동 데이터가 없습니다.`;
             }
         }
         try {
