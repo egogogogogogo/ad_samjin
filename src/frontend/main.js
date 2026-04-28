@@ -634,29 +634,32 @@ class JMLMES {
 
         const scale = this.state.qualityScale;
         const mode = this.state.dateMode;
+        const year = this.state.selectedDate;
         const groups = {};
 
         // 1. 라벨 사전 생성 (연간 뷰인 경우 1년 전체 확보)
         let labels = [];
         if (mode === 'yearly') {
-            const year = this.state.selectedDate;
             if (scale === 'monthly') {
                 for (let i = 1; i <= 12; i++) labels.push(`${year}-${i.toString().padStart(2, '0')}`);
             } else if (scale === 'weekly') {
                 for (let i = 1; i <= 52; i++) labels.push(`${year}-W${i.toString().padStart(2, '0')}`);
+            } else if (scale === 'daily') {
+                // 연간 일간 뷰는 너무 많으므로 현재 월 기준 혹은 데이터 범위 기준 (일단 1년치 생성 시도하되 가독성 고려)
+                const start = new Date(year, 0, 1);
+                const end = new Date(year, 11, 31);
+                for (let d = start; d <= end; d.setDate(d.getDate() + 1)) {
+                    labels.push(d.toISOString().split('T')[0]);
+                }
             }
         }
 
         // 2. 데이터 그룹화
         data.forEach(d => {
             if (!(d.cap_pull_off > 0)) return;
-            
             let key = d.work_date;
-            if (scale === 'weekly') {
-                key = this.getISOWeekString(d.work_date);
-            } else if (scale === 'monthly') {
-                key = d.work_date.slice(0, 7);
-            }
+            if (scale === 'weekly') key = this.getISOWeekString(d.work_date);
+            else if (scale === 'monthly') key = d.work_date.slice(0, 7);
 
             if (!groups[key]) groups[key] = { samples: [] };
             if (d.quality_samples && Array.isArray(d.quality_samples)) {
@@ -666,13 +669,10 @@ class JMLMES {
             }
         });
 
-        // 라벨이 미리 생성되지 않은 경우 (일간 뷰 등) 데이터 기반 생성
-        if (labels.length === 0) {
-            labels = Object.keys(groups).sort();
-        }
-        
+        if (labels.length === 0) labels = Object.keys(groups).sort();
         if (labels.length === 0) return;
 
+        // 3. 데이터 및 통계치 산출 (방어적 설계)
         const boxData = labels.map(k => (groups[k] && groups[k].samples.length) ? groups[k].samples : []);
         const medians = labels.map(k => {
             if (!groups[k] || !groups[k].samples.length) return null;
@@ -681,11 +681,14 @@ class JMLMES {
             return s.length % 2 !== 0 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
         });
 
-        // 스마트 줌 계산
-        const allSamples = labels.flatMap(k => groups[k].samples);
-        const minVal = Math.min(...allSamples, 420);
-        const maxVal = Math.max(...allSamples);
-        const padding = (maxVal - minVal) * 0.2;
+        // 4. 안전한 스케일(Y축 범위) 계산
+        const allSamples = labels.flatMap(k => (groups[k] && groups[k].samples) ? groups[k].samples : []);
+        let minVal = 420, maxVal = 460; // 기본 범위
+        if (allSamples.length > 0) {
+            minVal = Math.min(...allSamples, 420);
+            maxVal = Math.max(...allSamples, 460);
+        }
+        const padding = (maxVal - minVal) * 0.2 || 10;
 
         // 프리미엄 그라데이션
         const boxGradient = ctx.createLinearGradient(0, 0, 0, 300);
