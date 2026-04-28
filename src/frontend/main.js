@@ -807,7 +807,7 @@ class JMLMES {
                     backgroundColor: efficiencyData.map(v => {
                         if (v < 70) return 'rgba(239, 68, 68, 0.6)';
                         if (v < 90) return 'rgba(234, 179, 8, 0.6)';
-                        return '#60a5fa';
+                        return `rgba(${this.hexToRgb(procColor)}, 0.6)`;
                     }),
                     borderColor: efficiencyData.map(v => v < 70 ? '#ef4444' : (v < 90 ? '#eab308' : procColor)),
                     borderWidth: 2,
@@ -827,6 +827,12 @@ class JMLMES {
                 }
             }
         });
+    }
+
+    hexToRgb(hex) {
+        if (!hex) return '96, 165, 250';
+        const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+        return result ? `${parseInt(result[1], 16)}, ${parseInt(result[2], 16)}, ${parseInt(result[3], 16)}` : '96, 165, 250';
     }
 
     renderMachineViolinChart(data) {
