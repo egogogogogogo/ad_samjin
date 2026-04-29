@@ -91,8 +91,30 @@ class JMLMES {
         const btnDownloadTemplate = document.getElementById('btn-download-template');
         if (btnDownloadTemplate) btnDownloadTemplate.onclick = () => this.downloadExcelTemplate();
 
-        const manualForm = document.getElementById('manual-input-form');
-        if (manualForm) manualForm.onsubmit = (e) => { e.preventDefault(); this.handleManualInput(); };
+        // Quality Sub-tabs
+        document.querySelectorAll('#quality-sub-tabs .sub-tab').forEach(btn => {
+            btn.onclick = (e) => {
+                document.querySelectorAll('#quality-sub-tabs .sub-tab').forEach(b => b.classList.remove('active'));
+                e.target.classList.add('active');
+                this.state.activeQualitySubTab = e.target.dataset.sub;
+                this.renderQualityData();
+            };
+        });
+
+        // Modal Events
+        const btnOpenModal = document.getElementById('btn-open-manual-input');
+        const modal = document.getElementById('manual-input-modal');
+        const btnCloseModal = document.getElementById('btn-close-manual-input');
+        const btnCancelModal = document.getElementById('btn-cancel-manual');
+        const btnSaveModal = document.getElementById('btn-save-manual');
+
+        if (btnOpenModal) btnOpenModal.onclick = () => { 
+            modal.style.display = 'flex'; 
+            if (!document.getElementById('m-date').value) document.getElementById('m-date').value = new Date().toISOString().split('T')[0]; 
+        };
+        if (btnCloseModal) btnCloseModal.onclick = () => modal.style.display = 'none';
+        if (btnCancelModal) btnCancelModal.onclick = () => modal.style.display = 'none';
+        if (btnSaveModal) btnSaveModal.onclick = () => this.handleManualInput();
     }
 
     updateDateInputMode(mode) {
@@ -1221,8 +1243,12 @@ class JMLMES {
         if (!container) return;
 
         const filtered = this.getFilteredData();
+        const subTab = this.state.activeQualitySubTab || 'total-prod';
         
-        container.innerHTML = `
+        let html = '';
+
+        if (subTab === 'total-prod') {
+            html = `
             <table class="quality-table">
                 <thead>
                     <tr>
@@ -1256,10 +1282,163 @@ class JMLMES {
                     }).join('')}
                 </tbody>
             </table>
-        `;
+            `;
+        } else if (subTab === 'process-perf') {
+            html = `
+            <div style="overflow-x: auto;">
+                <table class="quality-table" style="font-size: 0.8rem; white-space: nowrap;">
+                    <thead>
+                        <tr>
+                            <th rowspan="2" style="position: sticky; left: 0; background: var(--bg-card); z-index: 2;">작업 일자</th>
+                            <th colspan="5">성형 실적 (M1~M5)</th>
+                            <th colspan="11">조립 실적 (A1~A11)</th>
+                            <th colspan="4">포장 실적 (P1~P4)</th>
+                            <th colspan="3">검사 실적 (I1~I3)</th>
+                        </tr>
+                        <tr>
+                            ${Array.from({length:5}, (_,i)=>`<th>M${i+1}</th>`).join('')}
+                            ${Array.from({length:11}, (_,i)=>`<th>A${i+1}</th>`).join('')}
+                            ${Array.from({length:4}, (_,i)=>`<th>P${i+1}</th>`).join('')}
+                            ${Array.from({length:3}, (_,i)=>`<th>I${i+1}</th>`).join('')}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${filtered.map(d => {
+                            const m = d.machine_data?.molding || Array(5).fill(0);
+                            const a = d.machine_data?.assembly || Array(11).fill(0);
+                            const p = d.machine_data?.packing || Array(4).fill(0);
+                            const i = d.machine_data?.inspection || Array(3).fill(0);
+                            return `
+                                <tr>
+                                    <td style="position: sticky; left: 0; background: var(--bg-card); z-index: 1;">${d.work_date}</td>
+                                    ${Array.from({length:5}, (_,idx)=>`<td>${(m[idx]||0).toLocaleString()}</td>`).join('')}
+                                    ${Array.from({length:11}, (_,idx)=>`<td>${(a[idx]||0).toLocaleString()}</td>`).join('')}
+                                    ${Array.from({length:4}, (_,idx)=>`<td>${(p[idx]||0).toLocaleString()}</td>`).join('')}
+                                    ${Array.from({length:3}, (_,idx)=>`<td>${(i[idx]||0).toLocaleString()}</td>`).join('')}
+                                </tr>
+                            `;
+                        }).join('')}
+                    </tbody>
+                </table>
+            </div>
+            `;
+        } else if (subTab === 'defect-detail') {
+            html = `
+            <table class="quality-table">
+                <thead>
+                    <tr>
+                        <th>작업 일자</th>
+                        <th>찌그러짐</th>
+                        <th>스크래치</th>
+                        <th>오염/이물</th>
+                        <th>스프링이탈</th>
+                        <th>기울어짐</th>
+                        <th>기타</th>
+                        <th>총 불량수</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${filtered.map(d => {
+                        const def = d.defect_detail || {};
+                        const total = (def.dent||0)+(def.scratch||0)+(def.contamination||0)+(def.spring||0)+(def.tilt||0)+(def.etc||0);
+                        return `
+                            <tr>
+                                <td>${d.work_date}</td>
+                                <td>${(def.dent||0).toLocaleString()}</td>
+                                <td>${(def.scratch||0).toLocaleString()}</td>
+                                <td>${(def.contamination||0).toLocaleString()}</td>
+                                <td>${(def.spring||0).toLocaleString()}</td>
+                                <td>${(def.tilt||0).toLocaleString()}</td>
+                                <td>${(def.etc||0).toLocaleString()}</td>
+                                <td style="font-weight: bold; color: var(--danger);">${total.toLocaleString()}</td>
+                            </tr>
+                        `;
+                    }).join('')}
+                </tbody>
+            </table>
+            `;
+        } else if (subTab === 'cap-monitor') {
+            html = `
+            <table class="quality-table" style="font-size: 0.85rem;">
+                <thead>
+                    <tr>
+                        <th>작업 일자</th>
+                        ${Array.from({length:12}, (_,i)=>`<th>S${i+1}</th>`).join('')}
+                        <th>일평균</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${filtered.map(d => {
+                        const s = d.quality_samples || [];
+                        const avg = d.cap_pull_off || 0;
+                        return `
+                            <tr>
+                                <td>${d.work_date}</td>
+                                ${Array.from({length:12}, (_,idx)=>`
+                                    <td style="color: ${s[idx] && s[idx] < 410 ? 'var(--danger)' : 'inherit'}">${s[idx]||'-'}</td>
+                                `).join('')}
+                                <td style="font-weight: bold; color: ${avg < 410 ? 'var(--danger)' : 'var(--accent)'}">${avg}</td>
+                            </tr>
+                        `;
+                    }).join('')}
+                </tbody>
+            </table>
+            `;
+        }
+
+        container.innerHTML = html;
     }
 
     switchTab(id) { this.state.activeTab = id; this.renderUI(); }
+
+    async handleManualInput() {
+        const date = document.getElementById('m-date').value;
+        if (!date) return alert('작업 일자를 입력하세요.');
+
+        const btn = document.getElementById('btn-save-manual');
+        if(btn) { btn.disabled = true; btn.innerText = '저장 중...'; }
+
+        const getVals = (prefix, count) => Array.from({length: count}, (_, i) => Number(document.getElementById(`${prefix}${i+1}`).value) || 0);
+
+        const m_raw = getVals('m-m', 5);
+        const a_raw = getVals('m-a', 11);
+        const p_raw = getVals('m-p', 4);
+        const i_raw = getVals('m-i', 3);
+
+        const d_raw = getVals('m-d', 6);
+        const c_raw = getVals('m-s', 12).filter(v => v > 0);
+
+        const newRecord = {
+            partner_id: this.state.partner.id,
+            work_date: date,
+            molding_qty: m_raw.reduce((a, b) => a + b, 0),
+            assembly_qty: a_raw.reduce((a, b) => a + b, 0),
+            packing_qty: p_raw.reduce((a, b) => a + b, 0),
+            actual_qty: i_raw.reduce((a, b) => a + b, 0),
+            defect_qty: d_raw.reduce((a, b) => a + b, 0),
+            machine_data: { molding: m_raw, assembly: a_raw, packing: p_raw, inspection: i_raw },
+            defect_detail: {
+                dent: d_raw[0], scratch: d_raw[1], contamination: d_raw[2],
+                spring: d_raw[3], tilt: d_raw[4], etc: d_raw[5]
+            },
+            quality_samples: c_raw,
+            cap_pull_off: c_raw.length ? Math.round(c_raw.reduce((a, b) => a + b, 0) / c_raw.length) : 0,
+            target_qty: 0
+        };
+
+        const { error } = await this.supabase.from('production_actuals').upsert([newRecord], { onConflict: 'partner_id, work_date' });
+        
+        if(btn) { btn.disabled = false; btn.innerText = '데이터 저장'; }
+
+        if (error) {
+            alert('저장 실패: ' + error.message);
+        } else {
+            alert('데이터가 성공적으로 저장되었습니다.');
+            document.getElementById('manual-input-modal').style.display = 'none';
+            document.getElementById('v13-manual-form').reset();
+            this.refreshData();
+        }
+    }
 
     // --- Data Management Handlers ---
 

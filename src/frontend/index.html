@@ -51,9 +51,8 @@
             </div>
             <nav class="nav-links">
                 <li class="active" data-tab="dashboard"><i class="fas fa-chart-line"></i> 대시보드 요약</li>
-                <li data-tab="quality-data"><i class="fas fa-microscope"></i> 실시간 품질데이터</li>
+                <li data-tab="quality-data"><i class="fas fa-microscope"></i> 품질데이터</li>
                 <li data-tab="prod-plan"><i class="fas fa-tasks"></i> 생산계획 관리</li>
-                <li data-tab="data-mgmt"><i class="fas fa-cloud-upload-alt"></i> Raw Data 업데이트</li>
                 <li data-tab="settings"><i class="fas fa-sliders-h"></i> 시스템 설정</li>
             </ul>
             <div class="sidebar-footer-info">
@@ -154,95 +153,33 @@
                 </div>
             </section>
 
-            <!-- Data Management Tab (Unified) -->
-            <section id="tab-data-mgmt" class="tab-content">
-                <div class="data-mgmt-grid">
-                    <!-- Left: Input/Upload -->
-                    <div class="mgmt-controls">
-                        <div class="card">
-                            <h3><i class="fas fa-plus-circle"></i> 신규 실적 입력</h3>
-                            <form id="manual-input-form" class="grid-form">
-                                <div class="input-group">
-                                    <label>작업 일자</label>
-                                    <input type="date" id="input-date" required>
-                                </div>
-                                <div class="input-group">
-                                    <label>계획 수량</label>
-                                    <input type="number" id="input-target" placeholder="0">
-                                </div>
-                                <div class="input-group">
-                                    <label>최종 생산량</label>
-                                    <input type="number" id="input-actual" placeholder="0">
-                                </div>
-                                <div class="input-group">
-                                    <label>총 불량수</label>
-                                    <input type="number" id="input-defect" placeholder="0">
-                                </div>
-                                <button type="submit" class="btn-primary full-width">데이터 저장</button>
-                            </form>
+            <!-- Quality Data & Data Mgmt Tab -->
+            <section id="tab-quality-data" class="tab-content">
+                <!-- Top controls -->
+                <div class="card mb-15" style="padding: 15px;">
+                    <div style="display: flex; gap: 15px; align-items: center;">
+                        <button id="btn-open-manual-input" class="btn-accent"><i class="fas fa-edit"></i> 데이터 수동 키인 (Key-in)</button>
+                        <div id="drop-zone" class="drop-zone-compact" style="flex: 1; display: flex; align-items: center; justify-content: center; gap: 10px; border: 1px dashed var(--border); padding: 10px; border-radius: 8px; cursor: pointer; background: var(--bg-card); transition: all 0.2s;">
+                            <i class="fas fa-cloud-upload-alt" style="color: var(--primary);"></i>
+                            <span style="color: var(--text-dim);">엑셀 파일 대량 업로드 (클릭 또는 드래그)</span>
+                            <input type="file" id="file-input" hidden accept=".xlsx">
                         </div>
-
-                        <div class="card mt-20">
-                            <h3><i class="fas fa-file-excel"></i> 엑셀 파일 대량 업로드</h3>
-                            <div id="drop-zone" class="drop-zone">
-                                <i class="fas fa-cloud-upload-alt"></i>
-                                <p>파일을 이 곳에 끌어다 놓거나 클릭하세요.</p>
-                                <input type="file" id="file-input" hidden accept=".xlsx">
-                            </div>
-                            <div class="mt-15">
-                                <button id="btn-download-template" class="btn-secondary-compact full-width">
-                                    <i class="fas fa-download"></i> R07 표준 엑셀 템플릿 다운로드
-                                </button>
-                            </div>
-                            <div id="upload-preview" style="display: none;">
-                                <div class="preview-info">
-                                    <span id="preview-filename">filename.xlsx</span>
-                                    <span id="preview-count">0 rows detected</span>
-                                </div>
-                                <button id="btn-save-upload" class="btn-accent full-width">데이터 업로드</button>
-                            </div>
-                        </div>
+                        <button id="btn-download-template" class="btn-secondary-compact"><i class="fas fa-download"></i> R07 표준 엑셀 템플릿 다운로드</button>
                     </div>
-
-                    <!-- Right: History & Edit -->
-                    <div class="mgmt-history">
-                        <div class="card h-full">
-                            <div class="card-header">
-                                <h3><i class="fas fa-history"></i> 최근 생산 이력</h3>
-                                <div class="table-actions">
-                                    <button id="btn-download-csv" class="btn-sm"><i class="fas fa-download"></i> CSV</button>
-                                </div>
-                            </div>
-                            <div class="table-container">
-                                <table id="history-table">
-                                    <thead>
-                                        <tr>
-                                            <th>날짜</th>
-                                            <th>계획</th>
-                                            <th>실적</th>
-                                            <th>불량</th>
-                                            <th>달성률</th>
-                                            <th>PPM</th>
-                                            <th>관리</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="history-body">
-                                        <!-- Dynamic rows -->
-                                    </tbody>
-                                </table>
-                            </div>
+                    <div id="upload-preview" style="display: none; margin-top: 15px; background: rgba(0,0,0,0.2); padding: 10px; border-radius: 8px; border: 1px solid var(--border);">
+                        <div class="preview-info">
+                            <span id="preview-filename">filename.xlsx</span>
+                            <span id="preview-count">0 rows detected</span>
                         </div>
+                        <button id="btn-save-upload" class="btn-primary mt-10 full-width">데이터 업로드 승인</button>
                     </div>
                 </div>
-            </section>
 
-            <!-- Quality Data Tab -->
-            <section id="tab-quality-data" class="tab-content">
                 <div class="sub-tab-container" id="quality-sub-tabs">
-                    <button class="sub-tab active" data-sub="total-prod">전체 생산 실적 현황</button>
-                    <button class="sub-tab" data-sub="process-perf">공정별 실적 현황</button>
-                    <button class="sub-tab" data-sub="defect-detail">상세 불량 내역</button>
-                    <button class="sub-tab" data-sub="cap-monitor">Cap 탈거력 모니터링</button>
+                    <button class="sub-tab active" data-sub="total-prod">Summary</button>
+                    <button class="sub-tab" data-sub="process-perf">공정 설비별 생산실적 Data</button>
+                    <button class="sub-tab" data-sub="defect-detail">불량유형별 불량수량 Data</button>
+                    <button class="sub-tab" data-sub="cap-monitor">Cap 탈거력 Data</button>
                 </div>
                 <div class="card mt-15">
                     <div id="quality-table-container" class="table-container">
@@ -375,6 +312,90 @@
     </div>
 
     <!-- Modals / Notifications -->
+    <div id="manual-input-modal" class="overlay" style="display: none;">
+        <div class="modal-card" style="width: 900px; max-width: 95vw; max-height: 90vh; display: flex; flex-direction: column;">
+            <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; padding: 15px 20px; border-bottom: 1px solid var(--border);">
+                <h2 style="margin: 0; font-size: 1.2rem;"><i class="fas fa-keyboard"></i> 실시간 데이터 수동 키인 (Key-in)</h2>
+                <button id="btn-close-manual-input" style="background: none; border: none; color: var(--text-dim); font-size: 1.5rem; cursor: pointer;">&times;</button>
+            </div>
+            <div class="modal-body" style="padding: 20px; overflow-y: auto; flex: 1;">
+                <form id="v13-manual-form">
+                    <div class="input-group mb-15">
+                        <label>작업 일자 (필수)</label>
+                        <input type="date" id="m-date" required style="max-width: 200px;">
+                    </div>
+                    
+                    <div class="accordion-group">
+                        <div class="accordion-header">1. 공정 설비별 생산실적</div>
+                        <div class="accordion-content">
+                            <div class="grid-layout-multi">
+                                <div>
+                                    <h4>성형 (M1~M5)</h4>
+                                    <input type="number" id="m-m1" placeholder="M1"><input type="number" id="m-m2" placeholder="M2">
+                                    <input type="number" id="m-m3" placeholder="M3"><input type="number" id="m-m4" placeholder="M4">
+                                    <input type="number" id="m-m5" placeholder="M5">
+                                </div>
+                                <div>
+                                    <h4>조립 (A1~A11)</h4>
+                                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px;">
+                                        <input type="number" id="m-a1" placeholder="A1"><input type="number" id="m-a2" placeholder="A2">
+                                        <input type="number" id="m-a3" placeholder="A3"><input type="number" id="m-a4" placeholder="A4">
+                                        <input type="number" id="m-a5" placeholder="A5"><input type="number" id="m-a6" placeholder="A6">
+                                        <input type="number" id="m-a7" placeholder="A7"><input type="number" id="m-a8" placeholder="A8">
+                                        <input type="number" id="m-a9" placeholder="A9"><input type="number" id="m-a10" placeholder="A10">
+                                        <input type="number" id="m-a11" placeholder="A11">
+                                    </div>
+                                </div>
+                                <div>
+                                    <h4>포장 (P1~P4)</h4>
+                                    <input type="number" id="m-p1" placeholder="P1"><input type="number" id="m-p2" placeholder="P2">
+                                    <input type="number" id="m-p3" placeholder="P3"><input type="number" id="m-p4" placeholder="P4">
+                                </div>
+                                <div>
+                                    <h4>검사 (I1~I3)</h4>
+                                    <input type="number" id="m-i1" placeholder="I1"><input type="number" id="m-i2" placeholder="I2">
+                                    <input type="number" id="m-i3" placeholder="I3">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="accordion-group mt-15">
+                        <div class="accordion-header">2. 불량유형별 불량수량</div>
+                        <div class="accordion-content">
+                            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;">
+                                <div class="input-group"><label>찌그러짐</label><input type="number" id="m-d1" placeholder="0"></div>
+                                <div class="input-group"><label>스크레치</label><input type="number" id="m-d2" placeholder="0"></div>
+                                <div class="input-group"><label>오염/이물</label><input type="number" id="m-d3" placeholder="0"></div>
+                                <div class="input-group"><label>스프링이탈</label><input type="number" id="m-d4" placeholder="0"></div>
+                                <div class="input-group"><label>기울어짐</label><input type="number" id="m-d5" placeholder="0"></div>
+                                <div class="input-group"><label>기타</label><input type="number" id="m-d6" placeholder="0"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="accordion-group mt-15">
+                        <div class="accordion-header">3. Cap 탈거력 샘플 (12개)</div>
+                        <div class="accordion-content">
+                            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;">
+                                <input type="number" id="m-s1" placeholder="S1"><input type="number" id="m-s2" placeholder="S2">
+                                <input type="number" id="m-s3" placeholder="S3"><input type="number" id="m-s4" placeholder="S4">
+                                <input type="number" id="m-s5" placeholder="S5"><input type="number" id="m-s6" placeholder="S6">
+                                <input type="number" id="m-s7" placeholder="S7"><input type="number" id="m-s8" placeholder="S8">
+                                <input type="number" id="m-s9" placeholder="S9"><input type="number" id="m-s10" placeholder="S10">
+                                <input type="number" id="m-s11" placeholder="S11"><input type="number" id="m-s12" placeholder="S12">
+                            </div>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer" style="padding: 15px 20px; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 10px;">
+                <button type="button" id="btn-cancel-manual" class="btn-secondary">취소</button>
+                <button type="button" id="btn-save-manual" class="btn-primary">데이터 저장</button>
+            </div>
+        </div>
+    </div>
+
     <div id="toast-container"></div>
 
     <script src="config.js"></script>
