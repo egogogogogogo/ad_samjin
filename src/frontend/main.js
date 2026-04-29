@@ -119,6 +119,10 @@ class JMLMES {
         // Save Prod Plan
         const btnSaveProdPlan = document.getElementById('btn-save-prod-plan');
         if (btnSaveProdPlan) btnSaveProdPlan.onclick = () => this.saveProdPlan();
+
+        // Save Settings
+        const btnSaveSettings = document.getElementById('btn-save-settings');
+        if (btnSaveSettings) btnSaveSettings.onclick = () => this.saveSettings();
     }
 
     updateDateInputMode(mode) {
@@ -240,11 +244,13 @@ class JMLMES {
 
         if (data) {
             this.state.config = {
+                isNew: false,
                 thresholds: data.thresholds || defaultThresholds,
                 simParams: data.sim_params || defaultSimParams
             };
         } else {
             this.state.config = { 
+                isNew: true,
                 thresholds: defaultThresholds,
                 simParams: defaultSimParams
             };
@@ -1269,14 +1275,25 @@ class JMLMES {
         const btn = document.getElementById('btn-save-prod-plan');
         if (btn) { btn.disabled = true; btn.innerText = '저장 중...'; }
         
-        const targetQty = Number(document.getElementById('sim-target-qty').value) || 4500000;
+        const targetQty = Number(document.getElementById('sim-target-qty').value) || 6000000;
         this.state.config.thresholds.monthlyTarget = targetQty;
         
-        const { error } = await this.supabase.from('app_config').upsert({ 
-            partner_id: this.state.partner.id, 
-            sim_params: this.state.config.simParams,
-            thresholds: this.state.config.thresholds
-        }, { onConflict: 'partner_id' });
+        let error;
+        if (this.state.config.isNew) {
+            const res = await this.supabase.from('app_config').insert({ 
+                partner_id: this.state.partner.id, 
+                sim_params: this.state.config.simParams,
+                thresholds: this.state.config.thresholds
+            }).select().single();
+            error = res.error;
+            if (!error) this.state.config.isNew = false;
+        } else {
+            const res = await this.supabase.from('app_config').update({ 
+                sim_params: this.state.config.simParams,
+                thresholds: this.state.config.thresholds
+            }).eq('partner_id', this.state.partner.id);
+            error = res.error;
+        }
         
         if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-save"></i> 생산 계획 및 Capa 설정 서버 저장'; }
         
@@ -1285,6 +1302,36 @@ class JMLMES {
             alert('생산 계획 및 Capa 설정이 저장되었습니다. 대시보드에 즉시 반영됩니다.');
             this.refreshData(); // Re-render everything to update charts and KPIs
         }
+    }
+
+    async saveSettings() {
+        const btn = document.getElementById('btn-save-settings');
+        if (btn) { btn.disabled = true; btn.innerText = '저장 중...'; }
+
+        this.state.config.thresholds.ppm = Number(document.getElementById('set-ppm-limit').value) || 500;
+        this.state.config.thresholds.defectLimit = Number(document.getElementById('set-defect-limit').value) || 80;
+        this.state.config.thresholds.capRisk = Number(document.getElementById('set-cap-risk').value) || 410;
+
+        let error;
+        if (this.state.config.isNew) {
+            const res = await this.supabase.from('app_config').insert({ 
+                partner_id: this.state.partner.id, 
+                sim_params: this.state.config.simParams,
+                thresholds: this.state.config.thresholds
+            }).select().single();
+            error = res.error;
+            if (!error) this.state.config.isNew = false;
+        } else {
+            const res = await this.supabase.from('app_config').update({ 
+                sim_params: this.state.config.simParams,
+                thresholds: this.state.config.thresholds
+            }).eq('partner_id', this.state.partner.id);
+            error = res.error;
+        }
+
+        if (btn) { btn.disabled = false; btn.innerText = '설정값 서버 저장'; }
+        if (error) alert('설정 저장 실패: ' + error.message);
+        else alert('시스템 설정이 저장되었습니다.');
     }
 
     // --- Quality Data & Monitoring ---
