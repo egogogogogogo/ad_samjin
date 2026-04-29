@@ -231,7 +231,7 @@ class JMLMES {
 
     async loadConfig() {
         if (!this.state.partner) return;
-        const { data } = await this.supabase.from('app_config').select('*').eq('partner_id', this.state.partner.id).single();
+        const { data } = await this.supabase.from('app_config').select('*');
         
         // 기본값 정의 (사용자 엑셀 원본 데이터와 1:1 교차 검증 적용)
         const defaultThresholds = { ppm: 500, monthlyTarget: 6000000, defectLimit: 80, capRisk: 410 };
@@ -242,19 +242,17 @@ class JMLMES {
             { process: '검사', timeCapa: 16500, runTime: 8, machines: 2, days: 22, personnel: 2 }
         ];
 
-        if (data) {
-            this.state.config = {
-                isNew: false,
-                thresholds: data.thresholds || defaultThresholds,
-                simParams: data.sim_params || defaultSimParams
-            };
-        } else {
-            this.state.config = { 
-                isNew: true,
-                thresholds: defaultThresholds,
-                simParams: defaultSimParams
-            };
+        let thresholds = { ...defaultThresholds };
+        let simParams = [ ...defaultSimParams ];
+
+        if (data && data.length > 0) {
+            const th = data.find(d => d.key === 'thresholds');
+            const sp = data.find(d => d.key === 'sim_params');
+            if (th && th.value) thresholds = { ...thresholds, ...th.value };
+            if (sp && sp.value) simParams = sp.value;
         }
+
+        this.state.config = { thresholds, simParams };
 
         // 초기 Capa 계산 수행 (대시보드 AI 분석에서 즉시 사용 가능하도록)
         this.state.config.simParams.forEach(p => {
@@ -1278,22 +1276,17 @@ class JMLMES {
         const targetQty = Number(document.getElementById('sim-target-qty').value) || 6000000;
         this.state.config.thresholds.monthlyTarget = targetQty;
         
-        let error;
-        if (this.state.config.isNew) {
-            const res = await this.supabase.from('app_config').insert({ 
-                partner_id: this.state.partner.id, 
-                sim_params: this.state.config.simParams,
-                thresholds: this.state.config.thresholds
-            }).select().single();
-            error = res.error;
-            if (!error) this.state.config.isNew = false;
-        } else {
-            const res = await this.supabase.from('app_config').update({ 
-                sim_params: this.state.config.simParams,
-                thresholds: this.state.config.thresholds
-            }).eq('partner_id', this.state.partner.id);
-            error = res.error;
-        }
+        const res1 = await this.supabase.from('app_config').upsert({ 
+            key: 'sim_params', 
+            value: this.state.config.simParams 
+        }, { onConflict: 'key' });
+        
+        const res2 = await this.supabase.from('app_config').upsert({ 
+            key: 'thresholds', 
+            value: this.state.config.thresholds 
+        }, { onConflict: 'key' });
+        
+        const error = res1.error || res2.error;
         
         if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-save"></i> 생산 계획 및 Capa 설정 서버 저장'; }
         
@@ -1312,22 +1305,10 @@ class JMLMES {
         this.state.config.thresholds.defectLimit = Number(document.getElementById('set-defect-limit').value) || 80;
         this.state.config.thresholds.capRisk = Number(document.getElementById('set-cap-risk').value) || 410;
 
-        let error;
-        if (this.state.config.isNew) {
-            const res = await this.supabase.from('app_config').insert({ 
-                partner_id: this.state.partner.id, 
-                sim_params: this.state.config.simParams,
-                thresholds: this.state.config.thresholds
-            }).select().single();
-            error = res.error;
-            if (!error) this.state.config.isNew = false;
-        } else {
-            const res = await this.supabase.from('app_config').update({ 
-                sim_params: this.state.config.simParams,
-                thresholds: this.state.config.thresholds
-            }).eq('partner_id', this.state.partner.id);
-            error = res.error;
-        }
+        const { error } = await this.supabase.from('app_config').upsert({ 
+            key: 'thresholds', 
+            value: this.state.config.thresholds 
+        }, { onConflict: 'key' });
 
         if (btn) { btn.disabled = false; btn.innerText = '설정값 서버 저장'; }
         if (error) alert('설정 저장 실패: ' + error.message);
