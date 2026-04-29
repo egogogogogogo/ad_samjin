@@ -229,13 +229,13 @@ class JMLMES {
         if (!this.state.partner) return;
         const { data } = await this.supabase.from('app_config').select('*').eq('partner_id', this.state.partner.id).single();
         
-        // 기본값 정의
-        const defaultThresholds = { ppm: 500, monthlyTarget: 4500000, defectLimit: 80, capRisk: 410 };
+        // 기본값 정의 (사용자 엑셀 원본 데이터와 1:1 교차 검증 적용)
+        const defaultThresholds = { ppm: 500, monthlyTarget: 6000000, defectLimit: 80, capRisk: 410 };
         const defaultSimParams = [
-            { process: '성형', timeCapa: 550, runTime: 20, machines: 5, days: 25, personnel: 2 },
-            { process: '조립', timeCapa: 1200, runTime: 20, machines: 12, days: 25, personnel: 5 },
-            { process: '포장', timeCapa: 3500, runTime: 20, machines: 4, days: 25, personnel: 2 },
-            { process: '검사', timeCapa: 8000, runTime: 20, machines: 3, days: 25, personnel: 1 }
+            { process: '성형', timeCapa: 6000, runTime: 10, machines: 5, days: 20, personnel: 1 },
+            { process: '조립', timeCapa: 1750, runTime: 13, machines: 11, days: 22, personnel: 2 },
+            { process: '포장', timeCapa: 4000, runTime: 13, machines: 4, days: 22, personnel: 1 },
+            { process: '검사', timeCapa: 16500, runTime: 8, machines: 2, days: 22, personnel: 2 }
         ];
 
         if (data) {
@@ -1224,9 +1224,39 @@ class JMLMES {
                 <td><input type="number" value="${p.runTime}" onchange="window.app.updateSimParam(${i}, 'runTime', this.value)"></td>
                 <td><input type="number" value="${p.machines}" onchange="window.app.updateSimParam(${i}, 'machines', this.value)"></td>
                 <td><input type="number" value="${p.days}" onchange="window.app.updateSimParam(${i}, 'days', this.value)"></td>
-                <td>${p.personnel}</td>
+                <td><input type="number" value="${p.personnel}" onchange="window.app.updateSimParam(${i}, 'personnel', this.value)"></td>
             </tr>
         `).join('');
+
+        const targetQty = Number(document.getElementById('sim-target-qty').value) || this.state.config?.thresholds?.monthlyTarget || 6000000;
+        const capaAnalysisBody = document.getElementById('capa-analysis-body');
+        if (capaAnalysisBody) {
+            capaAnalysisBody.innerHTML = this.state.config.simParams.map((p, i) => {
+                const dailyCapa = p.timeCapa * p.runTime * p.machines;
+                const monthlyCapa = dailyCapa * p.days;
+                const dailyCapaPerMachine = p.timeCapa * p.runTime;
+                const monthlyCapaPerMachine = dailyCapaPerMachine * p.days;
+                
+                const personnel = p.personnel || 1;
+                const machinePerPerson = (p.machines / personnel).toFixed(1);
+                
+                // 적정 운영인원 = Math.ceil((목표 수량 / 월 Capa) * 현재 투입 인원)
+                const optimalPersonnel = monthlyCapa > 0 ? Math.ceil((targetQty / monthlyCapa) * personnel) : 0;
+                
+                return `
+                    <tr>
+                        <td style="font-weight: bold;">${p.process}</td>
+                        <td style="color: var(--accent);">${dailyCapa.toLocaleString()}</td>
+                        <td style="font-weight: bold; color: var(--accent);">${monthlyCapa.toLocaleString()}</td>
+                        <td>${dailyCapaPerMachine.toLocaleString()}</td>
+                        <td>${monthlyCapaPerMachine.toLocaleString()}</td>
+                        <td>${personnel}명</td>
+                        <td style="color: #fbbf24;">${machinePerPerson}대</td>
+                        <td style="font-weight: bold; color: ${optimalPersonnel > personnel ? 'var(--danger)' : 'var(--success)'};">${optimalPersonnel.toFixed(1)}명</td>
+                    </tr>
+                `;
+            }).join('');
+        }
     }
 
     updateSimParam(index, field, value) {
