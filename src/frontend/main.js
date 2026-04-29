@@ -115,6 +115,10 @@ class JMLMES {
         if (btnCloseModal) btnCloseModal.onclick = () => modal.style.display = 'none';
         if (btnCancelModal) btnCancelModal.onclick = () => modal.style.display = 'none';
         if (btnSaveModal) btnSaveModal.onclick = () => this.handleManualInput();
+
+        // Save Prod Plan
+        const btnSaveProdPlan = document.getElementById('btn-save-prod-plan');
+        if (btnSaveProdPlan) btnSaveProdPlan.onclick = () => this.saveProdPlan();
     }
 
     updateDateInputMode(mode) {
@@ -322,12 +326,18 @@ class JMLMES {
 
     renderKPIs(data) {
         const s = data.reduce((acc, curr) => {
-            acc.actual += (curr.actual_qty || 0); acc.target += (curr.target_qty || 0); acc.defect += (curr.defect_qty || 0);
+            acc.actual += (curr.actual_qty || 0); acc.defect += (curr.defect_qty || 0);
             return acc;
-        }, { actual: 0, target: 0, defect: 0 });
+        }, { actual: 0, defect: 0 });
+        
+        // 동적 일할(Daily) 타겟 계산: 월 목표 / 25일 * 조회된 일수
+        const uniqueDates = new Set(data.map(d => d.work_date)).size || 1;
+        const monthlyTarget = this.state.config?.thresholds?.monthlyTarget || 4500000;
+        const dailyTarget = Math.round(monthlyTarget / 25);
+        const dynamicTarget = dailyTarget * uniqueDates;
         
         const ppm = s.actual ? Math.round((s.defect / s.actual) * 1e6) : 0;
-        const achieve = s.target ? Math.round((s.actual / s.target) * 100) : 0;
+        const achieve = dynamicTarget ? Math.round((s.actual / dynamicTarget) * 100) : 0;
         
         const ppmLimit = this.state.config?.thresholds?.ppm || 500;
         
@@ -1157,7 +1167,7 @@ class JMLMES {
     }
 
     calculateSimulation() {
-        const targetQty = Number(document.getElementById('sim-target-qty').value) || 6000000;
+        const targetQty = Number(document.getElementById('sim-target-qty').value) || this.state.config?.thresholds?.monthlyTarget || 4500000;
         const params = this.state.config.simParams;
         
         let minCapa = Infinity;
@@ -1201,6 +1211,11 @@ class JMLMES {
     }
 
     renderSimUI() {
+        // Init target input
+        if (this.state.config?.thresholds?.monthlyTarget) {
+            document.getElementById('sim-target-qty').value = this.state.config.thresholds.monthlyTarget;
+        }
+
         const paramsBody = document.getElementById('sim-param-body');
         paramsBody.innerHTML = this.state.config.simParams.map((p, i) => `
             <tr>
@@ -1212,28 +1227,34 @@ class JMLMES {
                 <td>${p.personnel}</td>
             </tr>
         `).join('');
-
-        const evidenceBody = document.getElementById('sim-evidence-body');
-        evidenceBody.innerHTML = this.state.config.simParams.map(p => `
-            <tr>
-                <td>${p.process}</td>
-                <td>${p.monthlyCapa.toLocaleString()}</td>
-                <td>${p.dailyCapa.toLocaleString()}</td>
-                <td>${Math.round(p.monthlyCapa / p.machines).toLocaleString()}</td>
-                <td>${p.timeCapa}</td>
-            </tr>
-        `).join('');
     }
 
-    async updateSimParam(index, field, value) {
+    updateSimParam(index, field, value) {
         this.state.config.simParams[index][field] = Number(value);
         this.calculateSimulation();
         this.renderSimUI();
-        // Auto-save to Supabase
-        await this.supabase.from('app_config').upsert({ 
+    }
+
+    async saveProdPlan() {
+        const btn = document.getElementById('btn-save-prod-plan');
+        if (btn) { btn.disabled = true; btn.innerText = '저장 중...'; }
+        
+        const targetQty = Number(document.getElementById('sim-target-qty').value) || 4500000;
+        this.state.config.thresholds.monthlyTarget = targetQty;
+        
+        const { error } = await this.supabase.from('app_config').upsert({ 
             partner_id: this.state.partner.id, 
-            sim_params: this.state.config.simParams 
+            sim_params: this.state.config.simParams,
+            thresholds: this.state.config.thresholds
         }, { onConflict: 'partner_id' });
+        
+        if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-save"></i> 생산 계획 및 Capa 설정 서버 저장'; }
+        
+        if (error) alert('설정 저장 실패: ' + error.message);
+        else {
+            alert('생산 계획 및 Capa 설정이 저장되었습니다. 대시보드에 즉시 반영됩니다.');
+            this.refreshData(); // Re-render everything to update charts and KPIs
+        }
     }
 
     // --- Quality Data & Monitoring ---
