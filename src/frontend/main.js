@@ -1229,7 +1229,8 @@ class JMLMES {
                         <th>작업 일자</th>
                         <th>성형 실적</th>
                         <th>조립 실적</th>
-                        <th>최종(검사)</th>
+                        <th>포장 실적</th>
+                        <th>검사 실적</th>
                         <th>불량(PPM)</th>
                         <th>Cap 탈거력</th>
                         <th>상태</th>
@@ -1245,6 +1246,7 @@ class JMLMES {
                                 <td>${d.work_date}</td>
                                 <td>${(d.molding_qty || 0).toLocaleString()}</td>
                                 <td>${(d.assembly_qty || 0).toLocaleString()}</td>
+                                <td>${(d.packing_qty || 0).toLocaleString()}</td>
                                 <td>${(d.actual_qty || 0).toLocaleString()}</td>
                                 <td style="color: ${ppm > 500 ? 'var(--danger)' : 'inherit'}">${ppm.toLocaleString()}</td>
                                 <td>${capAvg}</td>

@@ -92,15 +92,15 @@
                 </div>
             </header>
 
-            <!-- Dashboard Sub-Tabs -->
-            <div class="sub-tab-container" id="dashboard-sub-tabs">
-                <button class="sub-tab active" data-sub="total">종합 요약</button>
-                <button class="sub-tab" data-sub="quality">품질/공정 분석</button>
-                <button class="sub-tab" data-sub="machine">설비/계획 분석</button>
-            </div>
-
             <!-- Dashboard Tab -->
             <section id="tab-dashboard" class="tab-content active">
+                <!-- Dashboard Sub-Tabs -->
+                <div class="sub-tab-container" id="dashboard-sub-tabs">
+                    <button class="sub-tab active" data-sub="total">종합 요약</button>
+                    <button class="sub-tab" data-sub="quality">품질/공정 분석</button>
+                    <button class="sub-tab" data-sub="machine">설비/계획 분석</button>
+                </div>
+
                 <!-- KPI Cards -->
                 <div class="kpi-grid" id="kpi-container">
                     <!-- Dynamic KPI cards here -->
@@ -122,12 +122,14 @@
                 <div class="dashboard-chart-layout">
                     <!-- Row 1: Trend (Full Width) -->
                     <div class="card chart-full-width">
+                    <div class="card chart-full-width">
                         <div class="card-header">
                             <h3><i class="fas fa-chart-area"></i> 생산 및 불량 트렌드 (PPM)</h3>
                         </div>
                         <div class="chart-container" style="height: 350px;">
                             <canvas id="mainChart"></canvas>
                         </div>
+                    </div>
                     </div>
 
                     <!-- Row 2: 50/50 Split -->
