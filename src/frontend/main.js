@@ -252,14 +252,15 @@ class JMLMES {
             document.getElementById('user-role').innerText = role === 'admin' ? 'Manager (Admin)' : 'Operator (Worker)';
             
             if (role === 'operator') {
-                // Hide dashboard and settings, only show quality-data for input
+                // Hide production plan and settings, only show dashboard and quality-data for operators
                 document.querySelectorAll('.nav-links li').forEach(li => {
                     const tab = li.getAttribute('data-tab');
-                    if (tab !== 'quality-data') {
+                    if (tab !== 'quality-data' && tab !== 'dashboard') {
                         li.style.display = 'none';
                     }
                 });
-                this.state.activeTab = 'quality-data';
+                // Default to dashboard when operator logs in
+                this.state.activeTab = 'dashboard';
                 
                 // Hide Excel upload and download template buttons for operators
                 const dropZone = document.getElementById('drop-zone');
