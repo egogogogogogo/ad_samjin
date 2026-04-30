@@ -45,6 +45,14 @@ class JMLMES {
         console.log('JML MES System: Initializing...');
         this.bindEvents();
         this.checkAuth();
+        this.checkDeviceMode();
+    }
+
+    checkDeviceMode() {
+        const savedMode = localStorage.getItem('mobile-mode');
+        if (savedMode === 'true' || (!savedMode && window.innerWidth < 768)) {
+            document.body.classList.add('mobile-mode');
+        }
     }
 
     bindEvents() {
@@ -73,6 +81,19 @@ class JMLMES {
         });
 
         document.getElementById('btn-refresh').onclick = () => this.refreshData();
+        
+        const btnToggleView = document.getElementById('btn-toggle-view');
+        if (btnToggleView) {
+            btnToggleView.onclick = () => {
+                document.body.classList.toggle('mobile-mode');
+                localStorage.setItem('mobile-mode', document.body.classList.contains('mobile-mode'));
+                
+                // If switching to mobile, open the first active tab (like Quality Data) if on operator mode
+                if (document.body.classList.contains('mobile-mode') && this.state.profile?.role === 'operator') {
+                    this.switchTab('quality-data');
+                }
+            };
+        }
 
         // Data Management Events
         const dropZone = document.getElementById('drop-zone');
@@ -224,6 +245,29 @@ class JMLMES {
         if (profile && profile.partners) {
             this.state.partner = profile.partners;
             document.getElementById('user-display-name').innerText = profile.full_name || user.email;
+            
+            // Set role and update UI
+            const role = profile.role || 'admin'; // default to admin if not set
+            this.state.profile = { ...profile, role };
+            document.getElementById('user-role').innerText = role === 'admin' ? 'Manager (Admin)' : 'Operator (Worker)';
+            
+            if (role === 'operator') {
+                // Hide dashboard and settings, only show quality-data for input
+                document.querySelectorAll('.nav-links li').forEach(li => {
+                    const tab = li.getAttribute('data-tab');
+                    if (tab !== 'quality-data') {
+                        li.style.display = 'none';
+                    }
+                });
+                this.state.activeTab = 'quality-data';
+                
+                // If it's an operator, default to mobile-mode
+                if (!localStorage.getItem('mobile-mode')) {
+                    document.body.classList.add('mobile-mode');
+                    localStorage.setItem('mobile-mode', 'true');
+                }
+            }
+
             await this.loadConfig();
             await this.refreshData();
         }

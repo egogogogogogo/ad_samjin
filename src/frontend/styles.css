@@ -850,3 +850,97 @@ tr:hover { background: rgba(0, 0, 0, 0.02); }
 .grid-layout-multi h4 { margin-top: 0; margin-bottom: 10px; color: var(--text-muted); font-size: 0.9rem; border-bottom: 1px solid var(--border); padding-bottom: 5px; }
 .grid-layout-multi input { width: calc(50% - 5px); margin-bottom: 5px; margin-right: 5px; }
 
+/* ==========================================================================
+   Mobile Unified Mode (.mobile-mode)
+   ========================================================================== */
+body.mobile-mode .app-layout {
+    flex-direction: column;
+}
+
+body.mobile-mode .sidebar {
+    width: 100%;
+    height: auto;
+    flex-direction: row;
+    padding: 10px;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+    order: 2; /* Move to bottom or below header */
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    z-index: 100;
+    background: var(--bg-sidebar);
+}
+
+body.mobile-mode .sidebar-header,
+body.mobile-mode .sidebar-footer-info,
+body.mobile-mode .sidebar-footer {
+    display: none;
+}
+
+body.mobile-mode .nav-links {
+    display: flex;
+    justify-content: space-around;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+}
+
+body.mobile-mode .nav-links li {
+    flex-direction: column;
+    padding: 8px;
+    font-size: 0.75rem;
+    gap: 4px;
+    margin-bottom: 0;
+}
+
+body.mobile-mode .nav-links li i {
+    font-size: 1.2rem;
+}
+
+body.mobile-mode .main-content {
+    padding: 15px;
+    padding-bottom: 80px; /* Space for bottom nav */
+}
+
+body.mobile-mode .top-bar {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 15px;
+}
+
+body.mobile-mode .top-bar-actions {
+    width: 100%;
+    justify-content: space-between;
+}
+
+body.mobile-mode .chart-row-split {
+    grid-template-columns: 1fr;
+}
+
+body.mobile-mode .grid-2col, 
+body.mobile-mode .settings-grid,
+body.mobile-mode .data-mgmt-grid {
+    grid-template-columns: 1fr;
+}
+
+/* Mobile full-screen modal optimization */
+body.mobile-mode .modal-card {
+    width: 100% !important;
+    height: 100% !important;
+    max-width: 100vw !important;
+    max-height: 100vh !important;
+    border-radius: 0;
+}
+
+body.mobile-mode .grid-layout-multi {
+    grid-template-columns: 1fr;
+}
+
+body.mobile-mode .accordion-content input {
+    width: 100% !important;
+    margin-right: 0;
+    margin-bottom: 10px;
+    padding: 15px;
+    font-size: 1.1rem;
+}
