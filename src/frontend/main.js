@@ -261,6 +261,12 @@ class JMLMES {
                 });
                 this.state.activeTab = 'quality-data';
                 
+                // Hide Excel upload and download template buttons for operators
+                const dropZone = document.getElementById('drop-zone');
+                const btnDownload = document.getElementById('btn-download-template');
+                if (dropZone) dropZone.style.display = 'none';
+                if (btnDownload) btnDownload.style.display = 'none';
+
                 // If it's an operator, default to mobile-mode
                 if (!localStorage.getItem('mobile-mode')) {
                     document.body.classList.add('mobile-mode');
