@@ -356,24 +356,21 @@ class JMLMES {
             }
         });
 
-        // 기능 버튼 제어
+        // 기능 버튼 제어 (업로드는 전 권한 허용하여 효율성 극대화)
         const dropZone = document.getElementById('drop-zone');
         const btnDownload = document.getElementById('btn-download-template');
         const btnOpenManual = document.getElementById('btn-open-manual-input');
         
+        // 업로드/다운로드 버튼은 이제 모든 역할(Operator 포함)에게 노출
+        if (dropZone) dropZone.style.display = 'flex';
+        if (btnDownload) btnDownload.style.display = 'flex';
+        if (btnOpenManual) btnOpenManual.style.display = 'flex';
+
         if (role === 'operator') {
-            if (dropZone) dropZone.style.display = 'none';
-            if (btnDownload) btnDownload.style.display = 'none';
-            // 오퍼레이터는 수동 입력만 가능하게 둠 (필요시 조절)
-            if (btnOpenManual) btnOpenManual.style.display = 'flex';
-            
             // 오퍼레이터는 강제 모바일 모드 진입 (선택 사항)
             if (!localStorage.getItem('mobile-mode')) {
                 document.body.classList.add('mobile-mode');
             }
-        } else {
-            if (dropZone) dropZone.style.display = 'flex';
-            if (btnDownload) btnDownload.style.display = 'flex';
         }
 
         // 초기 탭 설정
