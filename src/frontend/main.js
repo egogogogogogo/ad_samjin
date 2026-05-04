@@ -1700,7 +1700,7 @@ class JMLMES {
         const getVals = (prefix, count) => Array.from({length: count}, (_, i) => Number(document.getElementById(`${prefix}${i+1}`).value) || 0);
 
         const m_raw = getVals('m-m', 5);
-        const a_raw = getVals('m-a', 11);
+        const a_raw = getVals('m-a', 12);
         const p_raw = getVals('m-p', 4);
         const i_raw = getVals('m-i', 3);
 
@@ -1754,13 +1754,12 @@ class JMLMES {
             // v13 표준 파싱 (A:날짜, AF~AQ:품질샘플)
             const validRows = rows.slice(2).filter(row => row[0]);
             this.state.pendingUploadData = validRows.map(row => {
-                const m_raw = row.slice(1, 6).map(v => Number(v) || 0);
-                const a_raw = row.slice(6, 17).map(v => Number(v) || 0);
-                const p_raw = row.slice(17, 21).map(v => Number(v) || 0);
-                const i_raw = row.slice(21, 24).map(v => Number(v) || 0);
-                const d_raw = row.slice(24, 30).map(v => Number(v) || 0);
-                // AF(31) ~ AQ(42) 열에서 실제 탈거력 샘플 전수 추출 (필터링 없이 모든 측정값 수용)
-                const c_raw = row.slice(31, 43).map(v => Number(v) || 0).filter(v => v > 0);
+                const m_raw = row.slice(1, 6).map(v => Number(v) || 0); // M1~M5
+                const a_raw = row.slice(6, 18).map(v => Number(v) || 0); // A1~A12
+                const p_raw = row.slice(18, 22).map(v => Number(v) || 0); // P1~P4
+                const i_raw = row.slice(22, 25).map(v => Number(v) || 0); // I1~I3
+                const d_raw = row.slice(25, 31).map(v => Number(v) || 0); // Defect 6종
+                const c_raw = row.slice(32, 44).map(v => Number(v) || 0).filter(v => v > 0); // Cap Samples
 
                 return {
                     partner_id: this.state.partner.id,
@@ -1776,7 +1775,7 @@ class JMLMES {
                         spring: d_raw[3], tilt: d_raw[4], etc: d_raw[5]
                     },
                     quality_samples: c_raw,
-                    remarks: row[30] || '',
+                    remarks: row[31] || '',
                     cap_pull_off: c_raw.length ? Math.round(c_raw.reduce((a, b) => a + b, 0) / c_raw.length) : 0
                 };
             });
@@ -1822,9 +1821,9 @@ class JMLMES {
 
     downloadExcelTemplate() {
         // 단일 시트 구조: 데이터_입력 (최종 정제 버전)
-        const in_h1 = ["날짜(필수)", "성형장비 실적(M1~M5)", null, null, null, null, "조립기 실적(A1~A11)", null, null, null, null, null, null, null, null, null, null, "포장기 실적(P1~P4)", null, null, null, "검사 실적(I1~I3)", null, null, "불량 유형별 실적(6종)", null, null, null, null, null, "비고", "Cap 탈거력 샘플(12개)", null, null, null, null, null, null, null, null, null, null, null];
-        const in_h2 = ["날짜*", "M1", "M2", "M3", "M4", "M5", "A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8", "A9", "A10", "A11", "P1", "P2", "P3", "P4", "I1", "I2", "I3", "찌그러짐", "스크레치", "오염", "스프링삐짐", "기울어짐", "기타", "Issue 사항", "S1", "S2", "S3", "S4", "S5", "S6", "S7", "S8", "S9", "S10", "S11", "S12"];
-        const in_sample = ["2026-04-01", 10000, 10000, 10000, 10000, 10000, 5000, 5000, 5000, 5000, 5000, 5000, 5000, 5000, 5000, 5000, 5000, 12500, 12500, 12500, 12500, 16000, 16000, 18000, 10, 10, 10, 10, 10, 10, "정상", 480, 480, 480, 480, 480, 480, 480, 480, 480, 480, 480, 480];
+        const in_h1 = ["날짜(필수)", "성형장비 실적(M1~M5)", null, null, null, null, "조립기 실적(A1~A12)", null, null, null, null, null, null, null, null, null, null, null, "포장기 실적(P1~P4)", null, null, null, "검사 실적(I1~I3)", null, null, "불량 유형별 실적(6종)", null, null, null, null, null, "비고", "Cap 탈거력 샘플(12개)", null, null, null, null, null, null, null, null, null, null, null];
+        const in_h2 = ["날짜*", "M1", "M2", "M3", "M4", "M5", "A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8", "A9", "A10", "A11", "A12", "P1", "P2", "P3", "P4", "I1", "I2", "I3", "찌그러짐", "스크레치", "오염", "스프링삐짐", "기울어짐", "기타", "Issue 사항", "S1", "S2", "S3", "S4", "S5", "S6", "S7", "S8", "S9", "S10", "S11", "S12"];
+        const in_sample = ["2026-04-01", 10000, 10000, 10000, 10000, 10000, 5000, 5000, 5000, 5000, 5000, 5000, 5000, 5000, 5000, 5000, 5000, 5000, 12500, 12500, 12500, 12500, 16000, 16000, 18000, 10, 10, 10, 10, 10, 10, "정상", 480, 480, 480, 480, 480, 480, 480, 480, 480, 480, 480, 480];
         
         const ws = XLSX.utils.aoa_to_sheet([in_h1, in_h2, in_sample]);
         
@@ -1836,8 +1835,8 @@ class JMLMES {
         }
 
         ws['!merges'] = [
-            {s:{r:0,c:1},e:{r:0,c:5}}, {s:{r:0,c:6},e:{r:0,c:16}}, {s:{r:0,c:17},e:{r:0,c:20}}, 
-            {s:{r:0,c:21},e:{r:0,c:23}}, {s:{r:0,c:24},e:{r:0,c:29}}, {s:{r:0,c:31},e:{r:0,c:42}}
+            {s:{r:0,c:1},e:{r:0,c:5}}, {s:{r:0,c:6},e:{r:0,c:17}}, {s:{r:0,c:18},e:{r:0,c:21}}, 
+            {s:{r:0,c:22},e:{r:0,c:24}}, {s:{r:0,c:25},e:{r:0,c:30}}, {s:{r:0,c:32},e:{r:0,c:43}}
         ];
 
         const wb = XLSX.utils.book_new();
