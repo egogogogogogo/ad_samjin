@@ -243,7 +243,11 @@ class JMLMES {
         btn.disabled = true; btn.innerText = '인증 중...';
         try {
             const { error } = await this.supabase.auth.signInWithPassword({ email, password });
-            if (error) { alert('인증 실패: ' + error.message); btn.disabled = false; btn.innerText = '로그인'; }
+            if (error) { 
+                const msg = error.message === 'Invalid login credentials' ? '이메일 또는 비밀번호가 일치하지 않습니다.' : error.message;
+                alert('인증 실패: ' + msg); 
+                btn.disabled = false; btn.innerText = '로그인'; 
+            }
         } catch (err) { btn.disabled = false; btn.innerText = '로그인'; }
     }
 
