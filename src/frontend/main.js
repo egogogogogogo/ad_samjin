@@ -1,28 +1,35 @@
 /**
- * JML MES System v10.7
- * Optimized for RBAC, Security and Mobile Experience
+ * JML MES System v10.8
+ * Refactored for Modularity & Structural Stability
  */
 
 class JMLMES {
     constructor() {
+        // Initialize Core Clients (using names from config.js)
         this.supabase = supabase.createClient(CONFIG.supabaseUrl, CONFIG.supabaseKey);
+        
+        // Modules (Structural Isolation)
+        this.auth = new AuthManager(this.supabase);
+        this.api = new APIManager(this.supabase);
+
         this.state = {
             user: null,
             profile: null,
             partner: null,
             allPartners: [],
             dateMode: 'monthly',
-            selectedDate: '',
-            activeTab: 'dashboard'
+            selectedDate: new Date().toISOString().split('T')[0],
+            activeTab: 'dashboard',
+            charts: {}
         };
         this.init();
     }
 
     async init() {
-        this.log('JML MES System: Initializing...', 'system');
+        this.log('JML MES: UI Engine Initializing...', 'system');
         this.bindEvents();
         await this.checkAuth();
-        this.log('JML MES System v10.7 Finalized.', 'system');
+        this.log('JML MES: System Ready.', 'system');
     }
 
     log(msg, type = 'info') {
@@ -32,60 +39,34 @@ class JMLMES {
         entry.className = `log-entry ${type}`;
         entry.innerText = `[${new Date().toLocaleTimeString()}] ${msg}`;
         consoleEl.prepend(entry);
-        console.log(`[${type.toUpperCase()}] ${msg}`);
     }
 
     bindEvents() {
-        // Login
-        document.getElementById('btn-login').onclick = () => this.handleLogin();
-        document.getElementById('login-pw').onkeypress = (e) => { if (e.key === 'Enter') this.handleLogin(); };
-
-        // Logout
-        document.getElementById('btn-logout').onclick = () => this.handleLogout();
+        // Auth
+        const btnLogin = document.getElementById('btn-login');
+        if (btnLogin) btnLogin.onclick = () => this.handleLogin();
+        const inputPw = document.getElementById('login-pw');
+        if (inputPw) inputPw.onkeypress = (e) => { if (e.key === 'Enter') this.handleLogin(); };
+        const btnLogout = document.getElementById('btn-logout');
+        if (btnLogout) btnLogout.onclick = () => this.auth.signOut();
 
         // Tabs
         document.querySelectorAll('.nav-links li').forEach(li => {
             li.onclick = () => this.switchTab(li.getAttribute('data-tab'));
         });
 
-        // Settings
-        const btnSaveSettings = document.getElementById('btn-save-settings');
-        if (btnSaveSettings) btnSaveSettings.onclick = () => this.saveSettings();
-
-        // Password Modal
-        const btnProfile = document.getElementById('btn-profile');
-        const pwModal = document.getElementById('password-modal');
-        const btnClosePwModal = document.getElementById('btn-close-password-modal');
-        const btnChangePwModal = document.getElementById('btn-modal-change-password');
-
-        if (btnProfile) btnProfile.onclick = () => { 
-            const emailEl = document.getElementById('modal-user-email');
-            if (emailEl) emailEl.innerText = this.state.user?.email || '';
-            pwModal.style.display = 'flex'; 
-        };
-        if (btnClosePwModal) btnClosePwModal.onclick = () => { pwModal.style.display = 'none'; };
-        if (btnChangePwModal) btnChangePwModal.onclick = () => this.handleChangePassword();
-
-        // Sidebar Collapse
+        // Sidebar
         const btnCollapse = document.getElementById('btn-sidebar-collapse');
         const sidebar = document.querySelector('.sidebar');
-        if (btnCollapse) {
-            btnCollapse.onclick = () => {
-                sidebar.classList.toggle('collapsed');
-            };
+        if (btnCollapse && sidebar) {
+            btnCollapse.onclick = () => sidebar.classList.toggle('collapsed');
         }
 
-        // Global Modal Close
-        window.onclick = (event) => {
-            if (event.target == pwModal) pwModal.style.display = 'none';
-            const manualModal = document.getElementById('manual-input-modal');
-            if (event.target == manualModal) manualModal.style.display = 'none';
-        };
+        // Global Refresh
+        const btnRefresh = document.getElementById('btn-refresh');
+        if (btnRefresh) btnRefresh.onclick = () => this.refreshData();
 
-        // Refresh
-        document.getElementById('btn-refresh').onclick = () => this.refreshData();
-
-        // Date Filters
+        // Date Modes
         document.querySelectorAll('.filter-btn').forEach(btn => {
             btn.onclick = () => {
                 document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
@@ -93,15 +74,30 @@ class JMLMES {
                 this.updateDateInputMode(btn.getAttribute('data-mode'));
             };
         });
+
+        // Profile Modal
+        const btnProfile = document.getElementById('btn-profile');
+        const pwModal = document.getElementById('password-modal');
+        if (btnProfile && pwModal) {
+            btnProfile.onclick = () => {
+                const emailEl = document.getElementById('modal-user-email');
+                if (emailEl) emailEl.innerText = this.state.user?.email || '';
+                pwModal.style.display = 'flex';
+            };
+        }
+        const btnClosePw = document.getElementById('btn-close-password-modal');
+        if (btnClosePw) btnClosePw.onclick = () => { pwModal.style.display = 'none'; };
     }
 
     async checkAuth() {
-        const { data: { session } } = await this.supabase.auth.getSession();
+        const session = await this.auth.getSession();
         if (session) {
             await this.onAuthenticated(session.user);
         } else {
-            document.getElementById('login-overlay').style.display = 'flex';
-            document.getElementById('app-container').style.display = 'none';
+            const overlay = document.getElementById('login-overlay');
+            const app = document.getElementById('app-container');
+            if (overlay) overlay.style.display = 'flex';
+            if (app) app.style.display = 'none';
         }
     }
 
@@ -115,12 +111,11 @@ class JMLMES {
         btn.innerText = '인증 중...';
         
         try {
-            const { error } = await this.supabase.auth.signInWithPassword({ email, password });
-            if (error) { 
-                const msg = error.message === 'Invalid login credentials' ? '이메일 또는 비밀번호가 일치하지 않습니다.' : error.message;
-                alert('인증 실패: ' + msg); 
+            const { error } = await this.auth.signIn(email, password);
+            if (error) {
+                alert('인증 실패: ' + error.message);
                 btn.disabled = false;
-                btn.innerText = '로그인'; 
+                btn.innerText = '로그인';
             }
         } catch (err) {
             btn.disabled = false;
@@ -130,39 +125,38 @@ class JMLMES {
 
     async onAuthenticated(user) {
         try {
-            document.getElementById('login-overlay').style.display = 'none';
-            document.getElementById('app-container').style.display = 'flex';
+            const overlay = document.getElementById('login-overlay');
+            const app = document.getElementById('app-container');
+            if (overlay) overlay.style.display = 'none';
+            if (app) app.style.display = 'flex';
             
             this.state.user = user;
             this.log('인증 성공: ' + user.email, 'system');
             
-            const { data: profile } = await this.supabase.from('profiles').select('*').eq('id', user.id).single();
+            const profile = await this.auth.getProfile(user.id);
+            const role = profile.role;
             
-            let role = profile?.role || 'operator';
-            if (user.email.endsWith('@jml.com')) role = 'super_admin';
-            this.state.profile = { ...profile, role };
-            
+            // UI Update (Safe with null checks)
             const nameEl = document.getElementById('user-display-name');
             const roleEl = document.getElementById('user-role');
             if (nameEl) nameEl.innerText = profile?.full_name || user.email.split('@')[0];
-                if (roleEl) roleEl.innerText = roleLabels[role] || 'User';
+            if (roleEl) {
+                const labels = this.auth.getRoleLabels();
+                roleEl.innerText = labels[role] || 'User';
             }
 
             if (role === 'super_admin') {
-                const { data: allPartners } = await this.supabase.from('partners').select('*');
-                this.state.allPartners = allPartners || [];
+                this.state.allPartners = await this.api.getPartners();
                 if (this.state.allPartners.length > 0) this.state.partner = this.state.allPartners[0];
                 this.renderPartnerSwitcher();
             } else if (profile?.partner_id) {
-                const { data: partner } = await this.supabase.from('partners').select('*').eq('id', profile.partner_id).single();
-                this.state.partner = partner;
+                this.state.partner = await this.api.getPartnerById(profile.partner_id);
             }
 
             if (this.state.partner) {
                 this.log(`접속 업체: ${this.state.partner.company_name || this.state.partner.name}`, 'info');
                 this.applyUIGuard(role);
-                await this.loadConfig();
-                await this.refreshData();
+                this.refreshData();
             } else {
                 this.applyUIGuard(role);
                 this.log('업체 정보가 없습니다.', 'warning');
@@ -173,19 +167,32 @@ class JMLMES {
         }
     }
 
-    async handleLogout() {
-        await this.supabase.auth.signOut();
-        location.reload();
-    }
-
     applyUIGuard(role) {
         document.querySelectorAll('.nav-links li').forEach(li => {
             const tab = li.getAttribute('data-tab');
             li.style.display = (role === 'operator' && tab !== 'dashboard' && tab !== 'quality-data') ? 'none' : 'flex';
         });
+    }
 
-        // Hide upload bar from dashboard if needed via CSS or JS
-        // (Moved to Quality tab in index.html, so it won't show on dashboard)
+    renderPartnerSwitcher() {
+        const container = document.getElementById('partner-switcher-container');
+        if (!container || this.state.allPartners.length === 0) return;
+
+        container.innerHTML = `
+            <select id="select-partner" class="partner-select">
+                ${this.state.allPartners.map(p => `<option value="${p.id}" ${this.state.partner?.id === p.id ? 'selected' : ''}>${p.company_name || p.name}</option>`).join('')}
+            </select>
+        `;
+
+        const select = document.getElementById('select-partner');
+        if (select) {
+            select.onchange = async (e) => {
+                const partnerId = e.target.value;
+                this.state.partner = this.state.allPartners.find(p => p.id === partnerId);
+                this.log(`업체 전환: ${this.state.partner.company_name || this.state.partner.name}`, 'info');
+                await this.refreshData();
+            };
+        }
     }
 
     switchTab(tabId) {
@@ -207,24 +214,16 @@ class JMLMES {
         
         const today = new Date().toISOString().split('T')[0];
         container.innerHTML = '';
-
-        const input = this.createDateInput(mode === 'monthly' ? 'month' : (mode === 'yearly' ? 'number' : 'date'), 'date-picker-main', today);
-        if (input) container.appendChild(input);
-        this.state.selectedDate = today;
-    }
-
-    createDateInput(type, id, value) {
         const input = document.createElement('input');
-        input.type = type;
-        input.id = id;
-        input.value = value;
+        input.type = mode === 'monthly' ? 'month' : (mode === 'yearly' ? 'number' : 'date');
+        input.value = mode === 'yearly' ? new Date().getFullYear() : (mode === 'monthly' ? today.slice(0, 7) : today);
         input.className = 'custom-date-picker-compact';
         input.onchange = () => { this.state.selectedDate = input.value; this.refreshData(); };
-        return input;
+        container.appendChild(input);
+        this.state.selectedDate = input.value;
     }
 
     async refreshData() {
-        this.log(`데이터 새로고침 중... (${this.state.dateMode})`, 'info');
         if (this.state.activeTab === 'dashboard') {
             await this.loadDashboardStats();
         } else if (this.state.activeTab === 'quality-data') {
@@ -232,60 +231,28 @@ class JMLMES {
         }
     }
 
-    renderPartnerSwitcher() {
-        const container = document.getElementById('partner-switcher-container');
-        if (!container || this.state.allPartners.length === 0) return;
-
-        container.innerHTML = `
-            <select id="select-partner" class="partner-select">
-                ${this.state.allPartners.map(p => `<option value="${p.id}" ${this.state.partner?.id === p.id ? 'selected' : ''}>${p.company_name || p.name}</option>`).join('')}
-            </select>
-        `;
-
-        document.getElementById('select-partner').onchange = async (e) => {
-            const partnerId = e.target.value;
-            this.state.partner = this.state.allPartners.find(p => p.id === partnerId);
-            this.log(`업체 전환: ${this.state.partner.company_name || this.state.partner.name}`, 'info');
-            await this.refreshData();
-        };
-    }
-
     async loadDashboardStats() {
         if (!this.state.partner) return;
-        this.log('대시보드 통계 계산 중...', 'info');
-        
-        let query = this.supabase.from('production_actuals').select('*').eq('partner_id', this.state.partner.id);
-        
-        // Date Filtering
-        const dateVal = this.state.selectedDate || new Date().toISOString().split('T')[0];
-        if (this.state.dateMode === 'monthly') {
-            const [year, month] = dateVal.split('-');
-            query = query.gte('work_date', `${year}-${month}-01`).lte('work_date', `${year}-${month}-31`);
-        } else if (this.state.dateMode === 'yearly') {
-            const year = dateVal.split('-')[0];
-            query = query.gte('work_date', `${year}-01-01`).lte('work_date', `${year}-12-31`);
-        } else {
-            query = query.eq('work_date', dateVal);
+        try {
+            const data = await this.api.getProductionData(this.state.partner.id, this.state.dateMode, this.state.selectedDate);
+            
+            // Calculation
+            const totalProd = data.reduce((sum, r) => sum + (r.actual_qty || 0), 0);
+            const totalDefect = data.reduce((sum, r) => sum + (r.defect_qty || 0), 0);
+            const ppm = totalProd > 0 ? Math.round((totalDefect / totalProd) * 1000000) : 0;
+            const target = CONFIG.thresholds.monthlyTarget || 4500000;
+            const achievement = Math.round((totalProd / target) * 100);
+
+            this.renderKPICards(totalProd, ppm, achievement);
+            this.renderCharts(data);
+        } catch (err) {
+            this.log('데이터 분석 실패: ' + err.message, 'error');
         }
-
-        const { data, error } = await query.order('work_date', { ascending: true });
-        if (error) return this.log('데이터 로드 실패: ' + error.message, 'error');
-
-        // Calculate Totals
-        const totalProd = data.reduce((sum, r) => sum + (r.actual_qty || 0), 0);
-        const totalDefect = data.reduce((sum, r) => sum + (r.defect_qty || 0), 0);
-        const ppm = totalProd > 0 ? Math.round((totalDefect / totalProd) * 1000000) : 0;
-        const target = CONFIG.thresholds.monthlyTarget || 4500000;
-        const achievement = Math.round((totalProd / target) * 100);
-
-        this.renderKPICards(totalProd, ppm, achievement);
-        this.renderCharts(data);
     }
 
     renderKPICards(total, ppm, achievement) {
         const container = document.getElementById('kpi-container');
         if (!container) return;
-        
         container.innerHTML = `
             <div class="kpi-card">
                 <div class="label">총 생산량</div>
@@ -306,33 +273,18 @@ class JMLMES {
     }
 
     renderCharts(data) {
-        // Main Trend Chart
         const ctxMain = document.getElementById('mainChart');
         if (!ctxMain) return;
         
-        if (this.charts?.main) this.charts.main.destroy();
-        if (!this.charts) this.charts = {};
+        if (this.state.charts.main) this.state.charts.main.destroy();
 
-        this.charts.main = new Chart(ctxMain, {
+        this.state.charts.main = new Chart(ctxMain, {
             type: 'line',
             data: {
                 labels: data.map(r => r.work_date.split('-').slice(1).join('/')),
                 datasets: [
-                    {
-                        label: '생산량',
-                        data: data.map(r => r.actual_qty),
-                        borderColor: '#3b82f6',
-                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                        yAxisID: 'y',
-                        fill: true
-                    },
-                    {
-                        label: 'PPM',
-                        data: data.map(r => r.actual_qty > 0 ? Math.round((r.defect_qty / r.actual_qty) * 1000000) : 0),
-                        borderColor: '#ef4444',
-                        borderDash: [5, 5],
-                        yAxisID: 'y1'
-                    }
+                    { label: '생산량', data: data.map(r => r.actual_qty), borderColor: '#3b82f6', backgroundColor: 'rgba(59, 130, 246, 0.1)', yAxisID: 'y', fill: true },
+                    { label: 'PPM', data: data.map(r => r.actual_qty > 0 ? Math.round((r.defect_qty / r.actual_qty) * 1000000) : 0), borderColor: '#ef4444', borderDash: [5, 5], yAxisID: 'y1' }
                 ]
             },
             options: {
@@ -348,70 +300,39 @@ class JMLMES {
 
     async loadQualityHistory() {
         if (!this.state.partner) return;
-        this.log('품질 데이터 로드 중...', 'info');
+        try {
+            const data = await this.api.getQualityHistory(this.state.partner.id);
+            const container = document.getElementById('quality-table-container');
+            if (!container) return;
 
-        const { data, error } = await this.supabase
-            .from('production_actuals')
-            .select('*')
-            .eq('partner_id', this.state.partner.id)
-            .order('work_date', { ascending: false })
-            .limit(100);
+            if (data.length === 0) {
+                container.innerHTML = '<div class="no-data">데이터가 없습니다.</div>';
+                return;
+            }
 
-        if (error) return this.log('품질 데이터 로드 실패: ' + error.message, 'error');
-
-        const container = document.getElementById('quality-table-container');
-        if (!container) return;
-
-        if (data.length === 0) {
-            container.innerHTML = '<div class="no-data">데이터가 없습니다.</div>';
-            return;
-        }
-
-        container.innerHTML = `
-            <table class="quality-table">
-                <thead>
-                    <tr>
-                        <th>일자</th>
-                        <th>생산량</th>
-                        <th>불량</th>
-                        <th>PPM</th>
-                        <th>탈거력(avg)</th>
-                        <th>비고</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${data.map(r => {
-                        const ppm = r.actual_qty > 0 ? Math.round((r.defect_qty / r.actual_qty) * 1000000) : 0;
-                        return `
-                            <tr>
+            container.innerHTML = `
+                <table class="quality-table">
+                    <thead><tr><th>일자</th><th>생산량</th><th>불량</th><th>PPM</th><th>탈거력(avg)</th><th>비고</th></tr></thead>
+                    <tbody>
+                        ${data.map(r => {
+                            const ppm = r.actual_qty > 0 ? Math.round((r.defect_qty / r.actual_qty) * 1000000) : 0;
+                            return `<tr>
                                 <td>${r.work_date}</td>
                                 <td>${(r.actual_qty || 0).toLocaleString()}</td>
                                 <td class="${r.defect_qty > 0 ? 'text-red' : ''}">${(r.defect_qty || 0).toLocaleString()}</td>
                                 <td class="${ppm > 500 ? 'text-orange' : ''}">${ppm.toLocaleString()}</td>
                                 <td>${r.cap_pull_off || '-'}</td>
                                 <td>${r.remarks || ''}</td>
-                            </tr>
-                        `;
-                    }).join('')}
-                </tbody>
-            </table>
-        `;
-    }
-
-    async loadConfig() { 
-        this.log('시스템 설정 로딩...', 'info'); 
-        // Sync setting inputs with current thresholds
-        const ppmInput = document.getElementById('set-ppm-limit');
-        const targetInput = document.getElementById('sim-target-qty');
-        if (ppmInput) ppmInput.value = CONFIG.thresholds.ppm;
-        if (targetInput) targetInput.value = CONFIG.thresholds.monthlyTarget;
-    }
-    
-    async handleChangePassword() { this.log('비밀번호 변경 기능은 준비 중입니다.', 'info'); }
-    async saveSettings() { 
-        this.log('설정이 로컬에 반영되었습니다. (서버 동기화 준비 중)', 'success'); 
-        this.refreshData();
+                            </tr>`;
+                        }).join('')}
+                    </tbody>
+                </table>
+            `;
+        } catch (err) {
+            this.log('이력 조회 실패: ' + err.message, 'error');
+        }
     }
 }
 
+// Global Instance
 const app = new JMLMES();
