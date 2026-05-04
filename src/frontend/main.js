@@ -1,11 +1,6 @@
 /**
- * JML MES System - Core Engine (v9.7 Expert Precision Edition)
- * 1. Fixed Branding: JML MES System (No JJML)
- * 2. Trend: PPM Line in Front (order: 1)
- * 3. Pareto: Data Labels on Cumulative Line
- * 4. Process: 4-Process Load (Molding, Assembly, Packing, Inspection)
- * 5. Quality: Cap Pull-off Box-plot (Min/Max/Avg Range)
- * 6. Machine: Device-level Comparison (M1~M12)
+ * JML MES System - Final Stability Engine (v15.0.1 - Emergency Rollback)
+ * 이 버전은 검증된 v15.0 (9db2156) 기반의 안정화 버전입니다.
  */
 
 class JMLMES {
