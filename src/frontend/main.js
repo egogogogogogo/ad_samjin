@@ -69,7 +69,6 @@ class JMLMES {
         });
 
         document.getElementById('btn-save-settings').onclick = () => this.saveSettings();
-        document.getElementById('btn-change-password').onclick = () => this.handleChangePassword();
 
         document.querySelectorAll('.nav-links li').forEach(li => {
             li.onclick = () => this.switchTab(li.getAttribute('data-tab'));
