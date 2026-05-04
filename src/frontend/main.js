@@ -1590,13 +1590,13 @@ class JMLMES {
                         <tr>
                             <th rowspan="2" style="position: sticky; left: 0; background: var(--bg-card); z-index: 2;">작업 일자</th>
                             <th colspan="5">성형 실적 (M1~M5)</th>
-                            <th colspan="11">조립 실적 (A1~A11)</th>
+                            <th colspan="12">조립 실적 (A1~A12)</th>
                             <th colspan="4">포장 실적 (P1~P4)</th>
                             <th colspan="3">검사 실적 (I1~I3)</th>
                         </tr>
                         <tr>
                             ${Array.from({length:5}, (_,i)=>`<th>M${i+1}</th>`).join('')}
-                            ${Array.from({length:11}, (_,i)=>`<th>A${i+1}</th>`).join('')}
+                            ${Array.from({length:12}, (_,i)=>`<th>A${i+1}</th>`).join('')}
                             ${Array.from({length:4}, (_,i)=>`<th>P${i+1}</th>`).join('')}
                             ${Array.from({length:3}, (_,i)=>`<th>I${i+1}</th>`).join('')}
                         </tr>
@@ -1604,14 +1604,14 @@ class JMLMES {
                     <tbody>
                         ${filtered.map(d => {
                             const m = d.machine_data?.molding || Array(5).fill(0);
-                            const a = d.machine_data?.assembly || Array(11).fill(0);
+                            const a = d.machine_data?.assembly || Array(12).fill(0);
                             const p = d.machine_data?.packing || Array(4).fill(0);
                             const i = d.machine_data?.inspection || Array(3).fill(0);
                             return `
                                 <tr>
                                     <td style="position: sticky; left: 0; background: var(--bg-card); z-index: 1;">${d.work_date}</td>
                                     ${Array.from({length:5}, (_,idx)=>`<td>${(m[idx]||0).toLocaleString()}</td>`).join('')}
-                                    ${Array.from({length:11}, (_,idx)=>`<td>${(a[idx]||0).toLocaleString()}</td>`).join('')}
+                                    ${Array.from({length:12}, (_,idx)=>`<td>${(a[idx]||0).toLocaleString()}</td>`).join('')}
                                     ${Array.from({length:4}, (_,idx)=>`<td>${(p[idx]||0).toLocaleString()}</td>`).join('')}
                                     ${Array.from({length:3}, (_,idx)=>`<td>${(i[idx]||0).toLocaleString()}</td>`).join('')}
                                 </tr>
