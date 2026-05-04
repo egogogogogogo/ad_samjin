@@ -56,8 +56,20 @@ class JMLMES {
     }
 
     bindEvents() {
+        // Login & Logout
         document.getElementById('btn-login').onclick = () => this.handleLogin();
         document.getElementById('btn-logout').onclick = () => this.handleLogout();
+
+        // Enter key for login
+        const loginInputs = ['login-email', 'login-pw'];
+        loginInputs.forEach(id => {
+            document.getElementById(id).onkeydown = (e) => {
+                if (e.key === 'Enter') this.handleLogin();
+            };
+        });
+
+        document.getElementById('btn-save-settings').onclick = () => this.saveSettings();
+        document.getElementById('btn-change-password').onclick = () => this.handleChangePassword();
 
         document.querySelectorAll('.nav-links li').forEach(li => {
             li.onclick = () => this.switchTab(li.getAttribute('data-tab'));
@@ -1779,6 +1791,32 @@ class JMLMES {
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, "RawData");
         XLSX.writeFile(wb, "JML_MES_R07_Standard_v13.xlsx");
+    }
+
+    async handleChangePassword() {
+        const newPw = document.getElementById('new-password').value;
+        const confirmPw = document.getElementById('new-password-confirm').value;
+
+        if (!newPw || newPw.length < 6) return alert('비밀번호는 최소 6자 이상이어야 합니다.');
+        if (newPw !== confirmPw) return alert('비밀번호가 일치하지 않습니다.');
+
+        const btn = document.getElementById('btn-change-password');
+        btn.disabled = true;
+        btn.innerText = '변경 중...';
+
+        try {
+            const { error } = await this.supabase.auth.updateUser({ password: newPw });
+            if (error) throw error;
+            
+            alert('비밀번호가 성공적으로 변경되었습니다. 다음 로그인부터 적용됩니다.');
+            document.getElementById('new-password').value = '';
+            document.getElementById('new-password-confirm').value = '';
+        } catch (err) {
+            alert('비밀번호 변경 실패: ' + err.message);
+        } finally {
+            btn.disabled = false;
+            btn.innerText = '비밀번호 즉시 변경';
+        }
     }
 }
 
