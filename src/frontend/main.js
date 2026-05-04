@@ -162,9 +162,19 @@ class JMLMES {
         const btnClosePwModal = document.getElementById('btn-close-password-modal');
         const btnChangePwModal = document.getElementById('btn-modal-change-password');
 
-        if (btnProfile) btnProfile.onclick = () => { pwModal.style.display = 'flex'; };
+        if (btnProfile) btnProfile.onclick = () => { 
+            document.getElementById('modal-user-email').innerText = this.state.user?.email || '';
+            pwModal.style.display = 'flex'; 
+        };
         if (btnClosePwModal) btnClosePwModal.onclick = () => { pwModal.style.display = 'none'; };
         if (btnChangePwModal) btnChangePwModal.onclick = () => this.handleChangePassword();
+
+        // Close modal on background click
+        window.onclick = (event) => {
+            if (event.target == pwModal) pwModal.style.display = 'none';
+            const manualModal = document.getElementById('manual-input-modal');
+            if (event.target == manualModal) manualModal.style.display = 'none';
+        }
     }
 
     updateDateInputMode(mode) {
@@ -1811,26 +1821,35 @@ class JMLMES {
     }
 
     async handleChangePassword() {
+        const oldPw = document.getElementById('modal-old-password').value;
         const newPw = document.getElementById('modal-new-password').value;
         const confirmPw = document.getElementById('modal-new-password-confirm').value;
 
-        if (!newPw || newPw.length < 6) return alert('비밀번호는 최소 6자 이상이어야 합니다.');
-        if (newPw !== confirmPw) return alert('비밀번호가 일치하지 않습니다.');
+        if (!oldPw) return alert('기존 비밀번호를 입력해 주세요.');
+        if (!newPw || newPw.length < 6) return alert('새 비밀번호는 최소 6자 이상이어야 합니다.');
+        if (newPw !== confirmPw) return alert('새 비밀번호가 일치하지 않습니다.');
 
         const btn = document.getElementById('btn-modal-change-password');
         btn.disabled = true;
-        btn.innerText = '변경 중...';
+        btn.innerText = '검증 및 변경 중...';
 
         try {
-            const { error } = await this.supabase.auth.updateUser({ password: newPw });
-            if (error) throw error;
+            // 1. 기존 비밀번호 검증 (재로그인 시도)
+            const { error: authError } = await this.supabase.auth.signInWithPassword({
+                email: this.state.user.email,
+                password: oldPw
+            });
             
-            alert('비밀번호가 성공적으로 변경되었습니다. 다음 로그인부터 적용됩니다.');
-            document.getElementById('modal-new-password').value = '';
-            document.getElementById('modal-new-password-confirm').value = '';
-            document.getElementById('password-modal').style.display = 'none';
+            if (authError) throw new Error('기존 비밀번호가 올바르지 않습니다.');
+
+            // 2. 새 비밀번호로 업데이트
+            const { error: updateError } = await this.supabase.auth.updateUser({ password: newPw });
+            if (updateError) throw updateError;
+            
+            alert('비밀번호가 성공적으로 변경되었습니다. 보안을 위해 다시 로그인해 주세요.');
+            this.handleLogout(); 
         } catch (err) {
-            alert('비밀번호 변경 실패: ' + err.message);
+            alert('오류: ' + err.message);
         } finally {
             btn.disabled = false;
             btn.innerText = '비밀번호 변경 저장';
