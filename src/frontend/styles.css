@@ -851,96 +851,128 @@ tr:hover { background: rgba(0, 0, 0, 0.02); }
 .grid-layout-multi input { width: calc(50% - 5px); margin-bottom: 5px; margin-right: 5px; }
 
 /* ==========================================================================
-   Mobile Unified Mode (.mobile-mode)
+/* ==========================================================================
+   Responsive & Sidebar Toggle Optimization
    ========================================================================== */
-body.mobile-mode .app-layout {
-    flex-direction: column;
+
+/* Sidebar Toggle Inner Button */
+.sidebar {
+    position: relative;
+    transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-body.mobile-mode .sidebar {
-    width: 100%;
-    height: auto;
-    flex-direction: row;
-    padding: 10px;
-    border-right: none;
-    border-bottom: 1px solid var(--border);
-    order: 2; /* Move to bottom or below header */
-    position: fixed;
-    bottom: 0;
-    left: 0;
+.sidebar-toggle-inner {
+    position: absolute;
+    right: -15px;
+    top: 30px;
+    width: 30px;
+    height: 30px;
+    background: var(--accent);
+    color: white;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
     z-index: 100;
-    background: var(--bg-sidebar);
+    box-shadow: 0 4px 6px rgba(0,0,0,0.2);
+    transition: transform 0.3s;
 }
 
-body.mobile-mode .sidebar-header,
-body.mobile-mode .sidebar-footer-info,
-body.mobile-mode .sidebar-footer {
+.sidebar.collapsed {
+    width: 80px;
+    min-width: 80px;
+    padding: 20px 10px;
+}
+
+.sidebar.collapsed .sidebar-header span,
+.sidebar.collapsed .nav-links li span,
+.sidebar.collapsed .user-info,
+.sidebar.collapsed .sidebar-header h2,
+.sidebar.collapsed .sidebar-header small {
     display: none;
 }
 
-body.mobile-mode .nav-links {
-    display: flex;
-    justify-content: space-around;
-    width: 100%;
+.sidebar.collapsed .sidebar-toggle-inner {
+    transform: rotate(180deg);
+}
+
+.sidebar.collapsed .nav-links li {
+    justify-content: center;
+    padding: 15px;
+}
+
+.sidebar.collapsed .nav-links li i {
+    font-size: 1.4rem;
     margin: 0;
-    padding: 0;
 }
 
-body.mobile-mode .nav-links li {
-    flex-direction: column;
-    padding: 8px;
-    font-size: 0.75rem;
-    gap: 4px;
-    margin-bottom: 0;
+/* Header Wrapping for Mobile */
+.top-header {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 15px;
+    justify-content: space-between;
+    align-items: center;
+    padding-bottom: 20px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 25px;
 }
 
-body.mobile-mode .nav-links li i {
-    font-size: 1.2rem;
+.header-right {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+}
+
+/* Drop-zone Slim for Mobile */
+.drop-zone {
+    padding: 20px 10px;
+}
+
+.drop-zone span {
+    font-size: 0.85rem;
+    font-weight: 600;
+}
+
+@media (max-width: 768px) {
+    .header-right {
+        width: 100%;
+        justify-content: center;
+    }
+    
+    .filter-group {
+        width: 100%;
+        overflow-x: auto;
+        justify-content: flex-start;
+    }
+    
+    .filter-btn {
+        flex: 0 0 auto;
+        white-space: nowrap;
+    }
+
+    .action-bar .grid-3col {
+        grid-template-columns: 1fr;
+        gap: 10px;
+    }
+    
+    .btn-action {
+        font-size: 0.9rem !important;
+        padding: 12px !important;
+    }
+}
+
+/* Mobile App Layout Adjustments */
+body.mobile-mode .sidebar {
+    position: fixed;
+    height: 100vh;
+    z-index: 1000;
 }
 
 body.mobile-mode .main-content {
-    padding: 15px;
-    padding-bottom: 80px; /* Space for bottom nav */
-}
-
-body.mobile-mode .top-bar {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 15px;
-}
-
-body.mobile-mode .top-bar-actions {
+    margin-left: 0;
     width: 100%;
-    justify-content: space-between;
 }
 
-body.mobile-mode .chart-row-split {
-    grid-template-columns: 1fr;
-}
-
-body.mobile-mode .grid-2col, 
-body.mobile-mode .settings-grid,
-body.mobile-mode .data-mgmt-grid {
-    grid-template-columns: 1fr;
-}
-
-/* Mobile full-screen modal optimization */
-body.mobile-mode .modal-card {
-    width: 100% !important;
-    height: 100% !important;
-    max-width: 100vw !important;
-    max-height: 100vh !important;
-    border-radius: 0;
-}
-
-body.mobile-mode .grid-layout-multi {
-    grid-template-columns: 1fr;
-}
-
-body.mobile-mode .accordion-content input {
-    width: 100% !important;
-    margin-right: 0;
-    margin-bottom: 10px;
-    padding: 15px;
-    font-size: 1.1rem;
-}

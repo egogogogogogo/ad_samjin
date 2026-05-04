@@ -169,6 +169,15 @@ class JMLMES {
         if (btnClosePwModal) btnClosePwModal.onclick = () => { pwModal.style.display = 'none'; };
         if (btnChangePwModal) btnChangePwModal.onclick = () => this.handleChangePassword();
 
+        // Sidebar Collapse
+        const btnCollapse = document.getElementById('btn-sidebar-collapse');
+        const sidebar = document.querySelector('.sidebar');
+        if (btnCollapse) {
+            btnCollapse.onclick = () => {
+                sidebar.classList.toggle('collapsed');
+            };
+        }
+
         // Close modal on background click
         window.onclick = (event) => {
             if (event.target == pwModal) pwModal.style.display = 'none';

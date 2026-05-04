@@ -45,19 +45,18 @@
     <div class="app-layout" id="app-container" style="display: none;">
         <!-- Sidebar -->
         <aside class="sidebar">
-            <div class="sidebar-header">
-                <i class="fas fa-microchip" style="color: var(--accent); font-size: 1.4rem;"></i>
-                <span>JML MES System</span>
+            <div id="btn-sidebar-collapse" class="sidebar-toggle-inner">
+                <i class="fas fa-angle-left"></i>
             </div>
-            <nav class="nav-links">
-                <li class="active" data-tab="dashboard"><i class="fas fa-chart-line"></i> 대시보드 요약</li>
-                <li data-tab="quality-data"><i class="fas fa-microscope"></i> 품질데이터</li>
-                <li data-tab="prod-plan"><i class="fas fa-tasks"></i> 생산계획 관리</li>
-                <li data-tab="settings"><i class="fas fa-sliders-h"></i> 시스템 설정</li>
-            </ul>
-            <div class="sidebar-footer-info">
+            <div class="sidebar-header">
+                <h2>JML MES</h2>
                 <small>v10.0 (Full Migration)</small>
             </div>
+            <ul class="nav-links">
+                <li class="active" data-tab="dashboard"><i class="fas fa-chart-line"></i> 대시보드 요약</li>
+                <li data-tab="quality-data"><i class="fas fa-vial"></i> 품질데이터</li>
+                <li data-tab="settings"><i class="fas fa-cog"></i> 시스템 설정</li>
+            </ul>
             <div class="sidebar-footer">
                 <div class="user-info" id="btn-profile" style="cursor: pointer;" title="프로필 설정/비밀번호 변경">
                     <span id="user-display-name">Loading...</span>
@@ -69,31 +68,47 @@
 
         <!-- Content Area -->
         <main class="main-content">
-            <!-- Header -->
-            <header class="top-bar">
-                <div class="top-bar-left">
-                    <h2 id="page-title">Executive Dashboard <small style="font-size: 0.6rem; opacity: 0.5;">(v10.6 Stable)</small></h2>
-                    <p id="last-sync-time">최종 동기화: -</p>
+            <header class="top-header">
+                <div class="header-left">
+                    <h1 id="page-title">Dashboard Summary</h1>
                 </div>
-                <div class="top-bar-actions">
-                    <div class="filter-group-horizontal" id="dashboard-date-modes">
+                <div class="header-right">
+                    <div id="dashboard-date-modes" class="filter-group">
                         <button class="filter-btn" data-mode="daily">일간</button>
                         <button class="filter-btn" data-mode="weekly">주간</button>
                         <button class="filter-btn active" data-mode="monthly">월간</button>
                         <button class="filter-btn" data-mode="yearly">연간</button>
                         <button class="filter-btn" data-mode="custom">사용자지정</button>
                     </div>
-                    <div class="date-input-wrap-horizontal" id="date-input-container">
-                        <input type="month" id="date-picker-main" class="custom-date-picker-compact">
-                        <!-- Custom range inputs will be injected here via JS if needed -->
+                    <div id="date-input-container">
+                        <!-- Dynamic Date Inputs -->
                     </div>
-                    <button id="btn-refresh" class="btn-secondary-compact" title="새로고침"><i class="fas fa-sync-alt"></i></button>
-                    <button id="btn-toggle-view" class="btn-secondary-compact" title="웹/모바일 뷰 전환"><i class="fas fa-mobile-alt"></i></button>
+                    <div class="header-actions">
+                        <button id="btn-refresh" class="btn-icon" title="새로고침"><i class="fas fa-sync-alt"></i></button>
+                        <button id="btn-toggle-view" class="btn-icon" title="화면 전환"><i class="fas fa-mobile-alt"></i></button>
+                    </div>
                 </div>
             </header>
 
             <!-- Dashboard Tab -->
             <section id="tab-dashboard" class="tab-content active">
+                <!-- Action Bar (Upload/Input) -->
+                <section class="action-bar card">
+                    <div class="grid-3col">
+                        <button id="btn-open-manual-input" class="btn-action success">
+                            <i class="fas fa-edit"></i> 키인
+                        </button>
+                        <div id="drop-zone" class="drop-zone">
+                            <i class="fas fa-cloud-upload-alt"></i>
+                            <span>업로드</span>
+                            <input type="file" id="file-input" hidden>
+                        </div>
+                        <button id="btn-download-template" class="btn-action info">
+                            <i class="fas fa-download"></i> 템플릿
+                        </button>
+                    </div>
+                </section>
+
                 <!-- Dashboard Sub-Tabs -->
                 <div class="sub-tab-container" id="dashboard-sub-tabs">
                     <button class="sub-tab active" data-sub="total">종합 요약</button>
