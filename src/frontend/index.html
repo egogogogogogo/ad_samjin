@@ -83,8 +83,13 @@
                         <button class="filter-btn" data-mode="custom">사용자지정</button>
                     </div>
                     <div id="date-input-container"></div>
-                    <div class="header-actions">
-                        <button id="btn-refresh" class="btn-icon" title="새로고침"><i class="fas fa-sync-alt"></i></button>
+                    <div class="action-bar-right" style="display: flex; gap: 10px;">
+                        <button id="btn-export-data" class="btn-action btn-secondary" style="background: rgba(99, 102, 241, 0.1); border-color: var(--accent); color: var(--accent);">
+                            <i class="fas fa-file-export"></i> 데이터 다운로드 (Excel)
+                        </button>
+                        <button id="btn-open-template" class="btn-action btn-secondary">
+                            <i class="fas fa-file-download"></i> 템플릿
+                        </button>
                     </div>
                 </div>
             </header>
@@ -170,9 +175,11 @@
 
                 <div class="sub-tab-container" id="quality-sub-tabs">
                     <button class="sub-tab active" data-sub="total-prod">Summary</button>
-                    <button class="sub-tab" data-sub="process-perf">공정 설비별 생산실적 Data</button>
-                    <button class="sub-tab" data-sub="defect-detail">불량유형별 불량수량 Data</button>
-                    <button class="sub-tab" data-sub="cap-monitor">Cap 탈거력 Data</button>
+                    <button class="sub-tab" data-sub="forming">성형 (Forming)</button>
+                    <button class="sub-tab" data-sub="assembly">조립 (Assembly)</button>
+                    <button class="sub-tab" data-sub="packing">포장 (Packing)</button>
+                    <button class="sub-tab" data-sub="inspection">검사 (Inspection)</button>
+                    <button class="sub-tab" data-sub="quality-cap">Cap 탈거력</button>
                 </div>
                 <div class="card mt-15">
                     <div id="quality-table-container" class="table-container">
@@ -318,73 +325,103 @@
                 <button id="btn-close-manual-input" style="background: none; border: none; color: var(--text-dim); font-size: 1.5rem; cursor: pointer;">&times;</button>
             </div>
             <div class="modal-body" style="padding: 20px; overflow-y: auto; flex: 1;">
-                <form id="v13-manual-form">
+                <!-- Step 1: Process Selection -->
+                <div id="manual-step-1">
+                    <h3 style="margin-bottom: 20px; text-align: center; color: var(--text-dim);">입력할 공정을 선택해 주세요</h3>
+                    <div class="grid-layout-multi" style="grid-template-columns: repeat(2, 1fr); gap: 20px;">
+                        <button type="button" class="process-select-btn" data-process="forming">
+                            <i class="fas fa-cogs"></i><span>성형 (Forming)</span>
+                        </button>
+                        <button type="button" class="process-select-btn" data-process="assembly">
+                            <i class="fas fa-microchip"></i><span>조립 (Assembly)</span>
+                        </button>
+                        <button type="button" class="process-select-btn" data-process="packing">
+                            <i class="fas fa-box"></i><span>포장 (Packing)</span>
+                        </button>
+                        <button type="button" class="process-select-btn" data-process="inspection">
+                            <i class="fas fa-search-plus"></i><span>검사 (Inspection)</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Step 2: Data Entry (Hidden initially) -->
+                <form id="v13-manual-form" style="display: none;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; background: rgba(59, 130, 246, 0.1); padding: 10px 15px; border-radius: 8px; border: 1px solid var(--primary);">
+                        <div id="selected-process-title" style="font-weight: bold; color: var(--primary);">공정: </div>
+                        <button type="button" id="btn-back-to-step1" class="btn-secondary-compact" style="font-size: 0.8rem;">공정 다시 선택</button>
+                    </div>
                     <div class="input-group mb-15">
                         <label>작업 일자 (필수)</label>
                         <input type="date" id="m-date" required style="max-width: 200px;">
                     </div>
                     
-                    <div class="accordion-group">
-                        <div class="accordion-header">1. 공정 설비별 생산실적</div>
-                        <div class="accordion-content">
-                            <div class="grid-layout-multi">
-                                <div>
-                                    <h4>성형 (M1~M5)</h4>
-                                    <input type="number" id="m-m1" placeholder="M1"><input type="number" id="m-m2" placeholder="M2">
-                                    <input type="number" id="m-m3" placeholder="M3"><input type="number" id="m-m4" placeholder="M4">
-                                    <input type="number" id="m-m5" placeholder="M5">
-                                </div>
-                                <div>
-                                    <h4>조립 (A1~A12)</h4>
-                                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px;">
-                                        <input type="number" id="m-a1" placeholder="A1"><input type="number" id="m-a2" placeholder="A2">
-                                        <input type="number" id="m-a3" placeholder="A3"><input type="number" id="m-a4" placeholder="A4">
-                                        <input type="number" id="m-a5" placeholder="A5"><input type="number" id="m-a6" placeholder="A6">
-                                        <input type="number" id="m-a7" placeholder="A7"><input type="number" id="m-a8" placeholder="A8">
-                                        <input type="number" id="m-a9" placeholder="A9"><input type="number" id="m-a10" placeholder="A10">
-                                        <input type="number" id="m-a11" placeholder="A11"><input type="number" id="m-a12" placeholder="A12">
-                                    </div>
-                                </div>
-                                <div>
-                                    <h4>포장 (P1~P4)</h4>
-                                    <input type="number" id="m-p1" placeholder="P1"><input type="number" id="m-p2" placeholder="P2">
-                                    <input type="number" id="m-p3" placeholder="P3"><input type="number" id="m-p4" placeholder="P4">
-                                </div>
-                                <div>
-                                    <h4>검사 (I1~I3)</h4>
-                                    <input type="number" id="m-i1" placeholder="I1"><input type="number" id="m-i2" placeholder="I2">
-                                    <input type="number" id="m-i3" placeholder="I3">
-                                </div>
-                            </div>
+                    <!-- Forming Section -->
+                    <div id="section-forming" class="manual-section" style="display: none;">
+                        <h4 class="section-label">성형 공정 (Forming) - M1~M5 실적</h4>
+                        <div class="grid-layout-multi">
+                            <input type="number" id="m-m1" placeholder="M1"><input type="number" id="m-m2" placeholder="M2">
+                            <input type="number" id="m-m3" placeholder="M3"><input type="number" id="m-m4" placeholder="M4">
+                            <input type="number" id="m-m5" placeholder="M5">
                         </div>
                     </div>
 
-                    <div class="accordion-group mt-15">
-                        <div class="accordion-header">2. 불량유형별 불량수량</div>
-                        <div class="accordion-content">
-                            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;">
-                                <div class="input-group"><label>찌그러짐</label><input type="number" id="m-d1" placeholder="0"></div>
-                                <div class="input-group"><label>스크레치</label><input type="number" id="m-d2" placeholder="0"></div>
-                                <div class="input-group"><label>오염/이물</label><input type="number" id="m-d3" placeholder="0"></div>
-                                <div class="input-group"><label>스프링이탈</label><input type="number" id="m-d4" placeholder="0"></div>
-                                <div class="input-group"><label>기울어짐</label><input type="number" id="m-d5" placeholder="0"></div>
-                                <div class="input-group"><label>기타</label><input type="number" id="m-d6" placeholder="0"></div>
-                            </div>
+                    <!-- Assembly Section -->
+                    <div id="section-assembly" class="manual-section" style="display: none;">
+                        <h4 class="section-label">조립 공정 (Assembly) - A1~A12 실적</h4>
+                        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;">
+                            <input type="number" id="m-a1" placeholder="A1"><input type="number" id="m-a2" placeholder="A2">
+                            <input type="number" id="m-a3" placeholder="A3"><input type="number" id="m-a4" placeholder="A4">
+                            <input type="number" id="m-a5" placeholder="A5"><input type="number" id="m-a6" placeholder="A6">
+                            <input type="number" id="m-a7" placeholder="A7"><input type="number" id="m-a8" placeholder="A8">
+                            <input type="number" id="m-a9" placeholder="A9"><input type="number" id="m-a10" placeholder="A10">
+                            <input type="number" id="m-a11" placeholder="A11"><input type="number" id="m-a12" placeholder="A12">
                         </div>
                     </div>
 
-                    <div class="accordion-group mt-15">
-                        <div class="accordion-header">3. Cap 탈거력 샘플 (12개)</div>
-                        <div class="accordion-content">
-                            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;">
-                                <input type="number" id="m-s1" placeholder="S1"><input type="number" id="m-s2" placeholder="S2">
-                                <input type="number" id="m-s3" placeholder="S3"><input type="number" id="m-s4" placeholder="S4">
-                                <input type="number" id="m-s5" placeholder="S5"><input type="number" id="m-s6" placeholder="S6">
-                                <input type="number" id="m-s7" placeholder="S7"><input type="number" id="m-s8" placeholder="S8">
-                                <input type="number" id="m-s9" placeholder="S9"><input type="number" id="m-s10" placeholder="S10">
-                                <input type="number" id="m-s11" placeholder="S11"><input type="number" id="m-s12" placeholder="S12">
-                            </div>
+                    <!-- Packing Section -->
+                    <div id="section-packing" class="manual-section" style="display: none;">
+                        <h4 class="section-label">포장 공정 (Packing) - P1~P4 실적</h4>
+                        <div class="grid-layout-multi">
+                            <input type="number" id="m-p1" placeholder="P1"><input type="number" id="m-p2" placeholder="P2">
+                            <input type="number" id="m-p3" placeholder="P3"><input type="number" id="m-p4" placeholder="P4">
                         </div>
+                    </div>
+
+                    <!-- Inspection Section -->
+                    <div id="section-inspection" class="manual-section" style="display: none;">
+                        <h4 class="section-label">검사 공정 (Inspection) - I1~I3 실적</h4>
+                        <div class="grid-layout-multi">
+                            <input type="number" id="m-i1" placeholder="I1"><input type="number" id="m-i2" placeholder="I2">
+                            <input type="number" id="m-i3" placeholder="I3">
+                        </div>
+                        
+                        <h4 class="section-label mt-20" style="color: var(--danger);">최종 불량 유형별 실적 (6종)</h4>
+                        <div class="grid-layout-multi">
+                            <input type="number" id="m-d1" placeholder="찌그러짐"><input type="number" id="m-d2" placeholder="스크레치">
+                            <input type="number" id="m-d3" placeholder="오염"><input type="number" id="m-d4" placeholder="스프링삐짐">
+                            <input type="number" id="m-d5" placeholder="기울어짐"><input type="number" id="m-d6" placeholder="기타">
+                        </div>
+                    </div>
+
+                    <div id="section-cap" class="manual-section" style="display: none;">
+                        <h4 class="section-label">Cap 탈거력 샘플 (12개)</h4>
+                        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;">
+                            ${Array.from({length: 12}, (_, i) => `<input type="number" id="m-s${i+1}" placeholder="S${i+1}">`).join('')}
+                        </div>
+                    </div>
+
+                    <div class="input-group mt-20">
+                        <label>비고 (Issue 사항)</label>
+                        <textarea id="m-remarks" rows="3" style="width: 100%; background: rgba(0,0,0,0.2); border: 1px solid var(--border); color: white; padding: 10px; border-radius: 8px;"></textarea>
+                    </div>
+
+                    <div style="display: flex; gap: 10px; margin-top: 30px;">
+                        <button type="submit" class="btn-accent" style="flex: 2;">
+                            <i class="fas fa-save"></i> 데이터 저장
+                        </button>
+                        <button type="button" id="btn-cancel-manual" class="btn-secondary" style="flex: 1;">
+                            취소
+                        </button>
                     </div>
                 </form>
             </div>

@@ -74,14 +74,56 @@ class JMLMES {
             li.onclick = () => this.switchTab(li.getAttribute('data-tab'));
         });
 
-        document.querySelectorAll('#dashboard-sub-tabs .sub-tab').forEach(btn => {
+        // Sub-tab switching
+        document.querySelectorAll('.sub-tab').forEach(btn => {
             btn.onclick = (e) => {
-                document.querySelectorAll('#dashboard-sub-tabs .sub-tab').forEach(b => b.classList.remove('active'));
+                const tab = e.target.dataset.sub;
+                const container = e.target.closest('.sub-tab-container');
+                container.querySelectorAll('.sub-tab').forEach(b => b.classList.remove('active'));
                 e.target.classList.add('active');
-                this.state.activeSubTab = e.target.dataset.sub;
-                this.renderDashboard();
+
+                if (container.id === 'quality-sub-tabs') {
+                    this.state.activeQualitySubTab = tab;
+                    this.renderQualityData();
+                } else {
+                    this.state.activeSubTab = tab;
+                    this.renderDashboard();
+                }
             };
         });
+
+        // v15.0 Manual Input - Step 1: Process Selection
+        document.querySelectorAll('.process-select-btn').forEach(btn => {
+            btn.onclick = (e) => {
+                const btnEl = e.currentTarget;
+                const process = btnEl.dataset.process;
+                this.state.selectedProcess = process;
+                
+                // UI Switch to Step 2
+                document.getElementById('manual-step-1').style.display = 'none';
+                document.getElementById('v13-manual-form').style.display = 'block';
+                document.getElementById('selected-process-title').innerText = `공정: ${btnEl.querySelector('span').innerText}`;
+                
+                // Show/Hide specific inputs based on process
+                this.toggleManualInputFields(process);
+            };
+        });
+
+        document.getElementById('btn-open-manual-input').onclick = () => {
+            document.getElementById('manual-input-modal').style.display = 'flex';
+            // Reset to Step 1
+            document.getElementById('manual-step-1').style.display = 'block';
+            document.getElementById('v13-manual-form').style.display = 'none';
+            this.state.selectedProcess = null;
+        };
+
+        document.getElementById('btn-export-data').onclick = () => this.exportDataToExcel();
+
+        document.getElementById('btn-back-to-step1').onclick = () => {
+            document.getElementById('manual-step-1').style.display = 'block';
+            document.getElementById('v13-manual-form').style.display = 'none';
+            this.state.selectedProcess = null;
+        };
 
         document.querySelectorAll('#dashboard-date-modes .filter-btn').forEach(btn => {
             btn.onclick = (e) => {
@@ -146,7 +188,7 @@ class JMLMES {
         };
         if (btnCloseModal) btnCloseModal.onclick = () => modal.style.display = 'none';
         if (btnCancelModal) btnCancelModal.onclick = () => modal.style.display = 'none';
-        if (btnSaveModal) btnSaveModal.onclick = () => this.handleManualInput();
+        if (btnSaveModal) btnSaveModal.onclick = (e) => this.handleManualInput(e);
 
         // Save Prod Plan
         const btnSaveProdPlan = document.getElementById('btn-save-prod-plan');
@@ -1253,7 +1295,6 @@ class JMLMES {
         const machineLabels = Array.from({length: machineCount}, (_, i) => `${process.slice(0,1)}${i+1}`);
         const dates = [...new Set(data.map(d => d.work_date))].sort();
 
-        // KDE (Kernel Density Estimation) Simple Implementation
         const getKDE = (samples, range) => {
             if (samples.length < 2) return range.map(() => 0);
             const bandwidth = 1.06 * Math.sqrt(samples.reduce((a,b)=>a+Math.pow(b-samples.reduce((p,c)=>p+c)/samples.length,2),0)/samples.length) * Math.pow(samples.length, -0.2) || 10000;
@@ -1265,7 +1306,6 @@ class JMLMES {
             });
         };
 
-        // 생산량 범위 설정 (0 ~ Max 생산량)
         const allVals = data.flatMap(d => d.machine_data?.[key] || []).filter(v => v > 0);
         const maxVal = Math.max(...allVals, 300000);
         const range = Array.from({length: 50}, (_, i) => (maxVal / 50) * i);
@@ -1283,14 +1323,14 @@ class JMLMES {
             
             return {
                 label: mId,
-                data: density.map((v, i) => ({ x: range[i], y: (v / maxDensity) + (idx * 0.5) })), // Ridge Offset
+                data: density.map((v, i) => ({ x: range[i], y: (v / maxDensity) + (idx * 0.5) })),
                 borderColor: colors[idx % colors.length].replace('0.5', '1'),
                 backgroundColor: colors[idx % colors.length],
                 fill: true,
                 pointRadius: 0,
                 tension: 0.4
             };
-        }).reverse(); // 위에서 아래로 쌓이게 역순
+        }).reverse();
 
         this.state.charts.machineRidge = new Chart(ctx, {
             type: 'line',
@@ -1309,6 +1349,24 @@ class JMLMES {
         });
     }
 
+    renderDeviceCompareChart(data) {
+        const canvas = document.getElementById('deviceCompareChart');
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        const labels = Array.from({length: 12}, (_, i) => `M${(i+1).toString().padStart(2,'0')}`);
+        new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels,
+                datasets: [
+                    { label: '월간 생산량', data: labels.map(() => 350000 + Math.random()*150000), backgroundColor: '#3b82f6', borderRadius: 4 },
+                    { label: '가동 효율 (%)', data: labels.map(() => 75 + Math.random()*20), type: 'line', borderColor: '#fbbf24', yAxisID: 'y1' }
+                ]
+            },
+            options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true }, y1: { position: 'right', max: 100, beginAtZero: true } } }
+        });
+    }
+
     renderMachineLayout(container, data) {
         container.innerHTML = `
             <div class="section-divider mb-15">
@@ -1321,11 +1379,19 @@ class JMLMES {
                 </div>
             </div>
 
-            <div class="card chart-full-width">
-                <div class="card-header">
-                    <h3><i class="fas fa-bolt"></i> [${this.state.machineQualityProcess}] 설비별 가동 효율 분석 (Utility Rate %)</h3>
+            <div class="chart-row-split">
+                <div class="card">
+                    <div class="card-header">
+                        <h3><i class="fas fa-bolt"></i> [${this.state.machineQualityProcess}] 설비별 가동 효율 분석</h3>
+                    </div>
+                    <div class="chart-container" style="height: 300px;"><canvas id="machineEfficiencyChart"></canvas></div>
                 </div>
-                <div class="chart-container" style="height: 300px;"><canvas id="machineEfficiencyChart"></canvas></div>
+                <div class="card">
+                    <div class="card-header">
+                        <h3><i class="fas fa-wave-square"></i> [${this.state.machineQualityProcess}] 설비별 생산 안정성 (Ridge Plot)</h3>
+                    </div>
+                    <div class="chart-container" style="height: 300px;"><canvas id="machineRidgeChart"></canvas></div>
+                </div>
             </div>
 
             <div class="card chart-full-width mt-15">
@@ -1337,6 +1403,7 @@ class JMLMES {
         `;
         
         this.renderMachineEfficiencyChart(data);
+        this.renderMachineRidgeChart(data);
         this.renderMachineViolinChart(data);
 
         document.querySelectorAll('#machine-global-toggle .filter-btn').forEach(btn => {
@@ -1347,29 +1414,15 @@ class JMLMES {
                 e.target.classList.add('active');
                 
                 const headers = container.querySelectorAll('.card-header h3');
-                headers[0].innerHTML = `<i class="fas fa-bolt"></i> [${process}] 설비별 가동 효율 분석 (Utility Rate %)`;
-                headers[1].innerHTML = `<i class="fas fa-wave-square"></i> [${process}] 설비별 생산 안정성 분석 (Violin Plot)`;
+                headers[0].innerHTML = `<i class="fas fa-bolt"></i> [${process}] 설비별 가동 효율 분석`;
+                headers[1].innerHTML = `<i class="fas fa-wave-square"></i> [${process}] 설비별 생산 안정성 (Ridge Plot)`;
+                headers[2].innerHTML = `<i class="fas fa-wave-square"></i> [${process}] 설비별 생산 안정성 분석 (Violin Plot)`;
                 
                 this.renderMachineEfficiencyChart(data);
+                this.renderMachineRidgeChart(data);
                 this.renderMachineViolinChart(data);
-                this.renderAIInsight(data); // 정상적인 AI 렌더링 함수 호출
+                this.renderAIInsight(data);
             };
-        });
-    }
-
-    renderDeviceCompareChart(data) {
-        const ctx = document.getElementById('deviceCompareChart').getContext('2d');
-        const labels = Array.from({length: 12}, (_, i) => `M${(i+1).toString().padStart(2,'0')}`);
-        new Chart(ctx, {
-            type: 'bar',
-            data: {
-                labels,
-                datasets: [
-                    { label: '월간 생산량', data: labels.map(() => 350000 + Math.random()*150000), backgroundColor: '#3b82f6', borderRadius: 4 },
-                    { label: '가동 효율 (%)', data: labels.map(() => 75 + Math.random()*20), type: 'line', borderColor: '#fbbf24', yAxisID: 'y1' }
-                ]
-            },
-            options: { responsive: true, maintainAspectRatio: false, scales: { y1: { position: 'right', max: 100, beginAtZero: true } } }
         });
     }
 
@@ -1547,196 +1600,246 @@ class JMLMES {
         let html = '';
 
         if (subTab === 'total-prod') {
-            html = `
-            <table class="quality-table">
-                <thead>
-                    <tr>
-                        <th>작업 일자</th>
-                        <th>성형 실적</th>
-                        <th>조립 실적</th>
-                        <th>포장 실적</th>
-                        <th>검사 실적</th>
-                        <th>불량(PPM)</th>
-                        <th>Cap 탈거력</th>
-                        <th>상태</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${filtered.map(d => {
-                        const ppm = d.actual_qty ? Math.round(d.defect_qty / d.actual_qty * 1e6) : 0;
-                        const capAvg = d.cap_pull_off || 0;
-                        const statusClass = ppm > 500 || capAvg < 410 ? 'bg-danger' : 'bg-success';
-                        return `
-                            <tr>
-                                <td>${d.work_date}</td>
-                                <td>${(d.molding_qty || 0).toLocaleString()}</td>
-                                <td>${(d.assembly_qty || 0).toLocaleString()}</td>
-                                <td>${(d.packing_qty || 0).toLocaleString()}</td>
-                                <td>${(d.actual_qty || 0).toLocaleString()}</td>
-                                <td style="color: ${ppm > 500 ? 'var(--danger)' : 'inherit'}">${ppm.toLocaleString()}</td>
-                                <td>${capAvg}</td>
-                                <td><span class="badge ${statusClass}">${ppm > 500 ? 'Issue' : '정상'}</span></td>
-                            </tr>
-                        `;
-                    }).join('')}
-                </tbody>
-            </table>
-            `;
-        } else if (subTab === 'process-perf') {
-            html = `
+            html = this.renderQualitySummaryTable(filtered);
+        } else if (subTab === 'forming') {
+            html = this.renderProcessDetailTab('forming', filtered);
+        } else if (subTab === 'assembly') {
+            html = this.renderProcessDetailTab('assembly', filtered);
+        } else if (subTab === 'packing') {
+            html = this.renderProcessDetailTab('packing', filtered);
+        } else if (subTab === 'quality-cap') {
+            html = this.renderCapPullOffTab(filtered);
+        }
+
+        container.innerHTML = html;
+    }
+
+    renderQualitySummaryTable(filtered) {
+        return `
+        <table class="quality-table">
+            <thead>
+                <tr>
+                    <th>작업 일자</th>
+                    <th>성형 실적</th>
+                    <th>조립 실적</th>
+                    <th>포장 실적</th>
+                    <th>검사 실적</th>
+                    <th>불량(PPM)</th>
+                    <th>Cap 탈거력</th>
+                    <th>상태</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${filtered.map(d => {
+                    const ppm = d.actual_qty ? Math.round(d.defect_qty / d.actual_qty * 1e6) : 0;
+                    const capAvg = d.cap_pull_off || 0;
+                    const statusClass = ppm > 500 || capAvg < 410 ? 'bg-danger' : 'bg-success';
+                    return `
+                        <tr>
+                            <td>${d.work_date}</td>
+                            <td>${(d.molding_qty || 0).toLocaleString()}</td>
+                            <td>${(d.assembly_qty || 0).toLocaleString()}</td>
+                            <td>${(d.packing_qty || 0).toLocaleString()}</td>
+                            <td>${(d.actual_qty || 0).toLocaleString()}</td>
+                            <td style="color: ${ppm > 500 ? 'var(--danger)' : 'inherit'}">${ppm.toLocaleString()}</td>
+                            <td>${capAvg}</td>
+                            <td><span class="badge ${statusClass}">${ppm > 500 ? 'Issue' : '정상'}</span></td>
+                        </tr>
+                    `;
+                }).join('')}
+            </tbody>
+        </table>
+        `;
+    }
+
+    renderProcessDetailTab(process, data) {
+        const title = { forming: '성형', assembly: '조립', packing: '포장', inspection: '검사' }[process];
+        const counts = { forming: 5, assembly: 12, packing: 4, inspection: 3 }[process];
+        const prefix = { forming: 'M', assembly: 'A', packing: 'P', inspection: 'I' }[process];
+
+        return `
+        <div style="padding: 20px; background: rgba(255,255,255,0.02); border-radius: 12px;">
+            <div class="card-header" style="margin-bottom: 25px;">
+                <h3><i class="fas fa-microchip"></i> ${title} 공정 상세 분석</h3>
+                <div class="badge bg-primary">${data.length}일 데이터 분석 중</div>
+            </div>
+            
             <div style="overflow-x: auto;">
-                <table class="quality-table" style="font-size: 0.8rem; white-space: nowrap;">
+                <table class="quality-table" style="font-size: 0.85rem;">
                     <thead>
                         <tr>
-                            <th rowspan="2" style="position: sticky; left: 0; background: var(--bg-card); z-index: 2;">작업 일자</th>
-                            <th colspan="5">성형 실적 (M1~M5)</th>
-                            <th colspan="12">조립 실적 (A1~A12)</th>
-                            <th colspan="4">포장 실적 (P1~P4)</th>
-                            <th colspan="3">검사 실적 (I1~I3)</th>
-                        </tr>
-                        <tr>
-                            ${Array.from({length:5}, (_,i)=>`<th>M${i+1}</th>`).join('')}
-                            ${Array.from({length:12}, (_,i)=>`<th>A${i+1}</th>`).join('')}
-                            ${Array.from({length:4}, (_,i)=>`<th>P${i+1}</th>`).join('')}
-                            ${Array.from({length:3}, (_,i)=>`<th>I${i+1}</th>`).join('')}
+                            <th>작업 일자</th>
+                            ${Array.from({length: counts}, (_, i) => `<th>${prefix}${i+1}</th>`).join('')}
+                            <th style="color: var(--accent);">총 실적</th>
+                            <th style="color: var(--danger);">불량수</th>
+                            <th>PPM</th>
                         </tr>
                     </thead>
                     <tbody>
-                        ${filtered.map(d => {
-                            const m = d.machine_data?.molding || Array(5).fill(0);
-                            const a = d.machine_data?.assembly || Array(12).fill(0);
-                            const p = d.machine_data?.packing || Array(4).fill(0);
-                            const i = d.machine_data?.inspection || Array(3).fill(0);
+                        ${data.map(d => {
+                            const md = d.machine_data?.[process] || Array(counts).fill(0);
+                            const total = md.reduce((a, b) => a + b, 0);
+                            const def = process === 'inspection' ? d.defect_qty : 0; // Temporary logic for assembly defect will follow
+                            const ppm = total ? Math.round(def / total * 1e6) : 0;
                             return `
                                 <tr>
-                                    <td style="position: sticky; left: 0; background: var(--bg-card); z-index: 1;">${d.work_date}</td>
-                                    ${Array.from({length:5}, (_,idx)=>`<td>${(m[idx]||0).toLocaleString()}</td>`).join('')}
-                                    ${Array.from({length:12}, (_,idx)=>`<td>${(a[idx]||0).toLocaleString()}</td>`).join('')}
-                                    ${Array.from({length:4}, (_,idx)=>`<td>${(p[idx]||0).toLocaleString()}</td>`).join('')}
-                                    ${Array.from({length:3}, (_,idx)=>`<td>${(i[idx]||0).toLocaleString()}</td>`).join('')}
+                                    <td>${d.work_date}</td>
+                                    ${md.map(v => `<td>${v.toLocaleString()}</td>`).join('')}
+                                    <td style="font-weight: bold;">${total.toLocaleString()}</td>
+                                    <td>${def.toLocaleString()}</td>
+                                    <td>${ppm.toLocaleString()}</td>
                                 </tr>
                             `;
                         }).join('')}
                     </tbody>
                 </table>
             </div>
-            `;
-        } else if (subTab === 'defect-detail') {
-            html = `
+        </div>
+        `;
+    }
+
+    renderCapPullOffTab(data) {
+        return `
+        <div class="card">
+            <div class="card-header">
+                <h3><i class="fas fa-flask"></i> Cap 탈거력 정밀 분석</h3>
+            </div>
             <table class="quality-table">
                 <thead>
                     <tr>
                         <th>작업 일자</th>
-                        <th>찌그러짐</th>
-                        <th>스크래치</th>
-                        <th>오염/이물</th>
-                        <th>스프링이탈</th>
-                        <th>기울어짐</th>
-                        <th>기타</th>
-                        <th>총 불량수</th>
+                        <th>샘플 데이터 (12개)</th>
+                        <th>평균 탈거력</th>
+                        <th>판정</th>
                     </tr>
                 </thead>
                 <tbody>
-                    ${filtered.map(d => {
-                        const def = d.defect_detail || {};
-                        const total = (def.dent||0)+(def.scratch||0)+(def.contamination||0)+(def.spring||0)+(def.tilt||0)+(def.etc||0);
-                        return `
-                            <tr>
-                                <td>${d.work_date}</td>
-                                <td>${(def.dent||0).toLocaleString()}</td>
-                                <td>${(def.scratch||0).toLocaleString()}</td>
-                                <td>${(def.contamination||0).toLocaleString()}</td>
-                                <td>${(def.spring||0).toLocaleString()}</td>
-                                <td>${(def.tilt||0).toLocaleString()}</td>
-                                <td>${(def.etc||0).toLocaleString()}</td>
-                                <td style="font-weight: bold; color: var(--danger);">${total.toLocaleString()}</td>
-                            </tr>
-                        `;
-                    }).join('')}
-                </tbody>
-            </table>
-            `;
-        } else if (subTab === 'cap-monitor') {
-            html = `
-            <table class="quality-table" style="font-size: 0.85rem;">
-                <thead>
-                    <tr>
-                        <th>작업 일자</th>
-                        ${Array.from({length:12}, (_,i)=>`<th>S${i+1}</th>`).join('')}
-                        <th>일평균</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${filtered.map(d => {
-                        const s = d.quality_samples || [];
+                    ${data.map(d => {
+                        const samples = d.quality_samples || [];
                         const avg = d.cap_pull_off || 0;
+                        const status = avg >= 410 ? '<span class="badge bg-success">합격</span>' : '<span class="badge bg-danger">불합격</span>';
                         return `
                             <tr>
                                 <td>${d.work_date}</td>
-                                ${Array.from({length:12}, (_,idx)=>`
-                                    <td style="color: ${s[idx] && s[idx] < 410 ? 'var(--danger)' : 'inherit'}">${s[idx]||'-'}</td>
-                                `).join('')}
-                                <td style="font-weight: bold; color: ${avg < 410 ? 'var(--danger)' : 'var(--accent)'}">${avg}</td>
+                                <td style="font-size: 0.75rem; color: var(--text-dim);">${samples.join(', ')}</td>
+                                <td style="font-weight: bold; color: ${avg < 410 ? 'var(--danger)' : 'var(--success)'}">${avg}</td>
+                                <td>${status}</td>
                             </tr>
                         `;
                     }).join('')}
                 </tbody>
             </table>
-            `;
-        }
+        </div>
+        `;
+    }
 
-        container.innerHTML = html;
+    toggleManualInputFields(process) {
+        // Hide all process sections first
+        const sections = document.querySelectorAll('.manual-section');
+        sections.forEach(sec => sec.style.display = 'none');
+
+        // Show the selected process section
+        const target = document.getElementById(`section-${process}`);
+        if (target) target.style.display = 'block';
+    }
     }
 
     switchTab(id) { this.state.activeTab = id; this.renderUI(); }
 
-    async handleManualInput() {
+    async handleManualInput(e) {
+        if (e) e.preventDefault();
+        const form = document.getElementById('v13-manual-form');
+        const btn = form.querySelector('button[type="submit"]');
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 저장 중...';
+
         const date = document.getElementById('m-date').value;
-        if (!date) return alert('작업 일자를 입력하세요.');
+        if (!date) return alert('작업 일자를 선택해주세요.');
 
-        const btn = document.getElementById('btn-save-manual');
-        if(btn) { btn.disabled = true; btn.innerText = '저장 중...'; }
-
+        const process = this.state.selectedProcess;
         const getVals = (prefix, count) => Array.from({length: count}, (_, i) => Number(document.getElementById(`${prefix}${i+1}`).value) || 0);
 
-        const m_raw = getVals('m-m', 5);
-        const a_raw = getVals('m-a', 12);
-        const p_raw = getVals('m-p', 4);
-        const i_raw = getVals('m-i', 3);
+        // 1. 공정별 데이터 수집
+        let currentProcessData = {};
+        if (process === 'forming') {
+            currentProcessData = { molding: getVals('m-m', 5) };
+        } else if (process === 'assembly') {
+            currentProcessData = { assembly: getVals('m-a', 12) };
+        } else if (process === 'packing') {
+            currentProcessData = { packing: getVals('m-p', 4) };
+        } else if (process === 'inspection') {
+            currentProcessData = { 
+                inspection: getVals('m-i', 3),
+                defect_detail: {
+                    dent: Number(document.getElementById('m-d1').value) || 0,
+                    scratch: Number(document.getElementById('m-d2').value) || 0,
+                    contamination: Number(document.getElementById('m-d3').value) || 0,
+                    spring: Number(document.getElementById('m-d4').value) || 0,
+                    tilt: Number(document.getElementById('m-d5').value) || 0,
+                    etc: Number(document.getElementById('m-d6').value) || 0
+                }
+            };
+        } else if (process === 'cap') {
+             currentProcessData = { quality_samples: getVals('m-s', 12).filter(v => v > 0) };
+        }
 
-        const d_raw = getVals('m-d', 6);
-        const c_raw = getVals('m-s', 12).filter(v => v > 0);
+        // 2. 기존 데이터 로드 (병합을 위함)
+        const { data: existing } = await this.supabase
+            .from('production_actuals')
+            .select('*')
+            .eq('partner_id', this.state.partner.id)
+            .eq('work_date', date)
+            .maybeSingle();
 
-        const newRecord = {
+        const machine_data = existing?.machine_data || { molding: [], assembly: [], packing: [], inspection: [] };
+        const defect_detail = existing?.defect_detail || {};
+        const quality_samples = existing?.quality_samples || [];
+        
+        // 3. 데이터 병합 (JSONB)
+        if (currentProcessData.molding) machine_data.molding = currentProcessData.molding;
+        if (currentProcessData.assembly) machine_data.assembly = currentProcessData.assembly;
+        if (currentProcessData.packing) machine_data.packing = currentProcessData.packing;
+        if (currentProcessData.inspection) {
+            machine_data.inspection = currentProcessData.inspection;
+            Object.assign(defect_detail, currentProcessData.defect_detail);
+        }
+        if (currentProcessData.quality_samples) {
+            // New quality samples replace old ones for that day
+            currentProcessData.quality_samples.forEach((v, i) => {
+                quality_samples[i] = v;
+            });
+        }
+
+        // 4. 합계 계산
+        const payload = {
             partner_id: this.state.partner.id,
             work_date: date,
-            molding_qty: m_raw.reduce((a, b) => a + b, 0),
-            assembly_qty: a_raw.reduce((a, b) => a + b, 0),
-            packing_qty: p_raw.reduce((a, b) => a + b, 0),
-            actual_qty: i_raw.reduce((a, b) => a + b, 0),
-            defect_qty: d_raw.reduce((a, b) => a + b, 0),
-            machine_data: { molding: m_raw, assembly: a_raw, packing: p_raw, inspection: i_raw },
-            defect_detail: {
-                dent: d_raw[0], scratch: d_raw[1], contamination: d_raw[2],
-                spring: d_raw[3], tilt: d_raw[4], etc: d_raw[5]
-            },
-            quality_samples: c_raw,
-            cap_pull_off: c_raw.length ? Math.round(c_raw.reduce((a, b) => a + b, 0) / c_raw.length) : 0,
-            target_qty: 0
+            machine_data: machine_data,
+            defect_detail: defect_detail,
+            quality_samples: quality_samples,
+            remarks: document.getElementById('m-remarks').value || existing?.remarks || '',
+            molding_qty: (machine_data.molding || []).reduce((a, b) => a + b, 0),
+            assembly_qty: (machine_data.assembly || []).reduce((a, b) => a + b, 0),
+            packing_qty: (machine_data.packing || []).reduce((a, b) => a + b, 0),
+            actual_qty: (machine_data.inspection || []).reduce((a, b) => a + b, 0),
+            defect_qty: Object.values(defect_detail).reduce((a, b) => a + b, 0),
+            cap_pull_off: quality_samples.length ? Math.round(quality_samples.reduce((a, b) => a + b, 0) / quality_samples.length) : 0
         };
 
-        const { error } = await this.supabase.from('production_actuals').upsert([newRecord], { onConflict: 'partner_id, work_date' });
-        
-        if(btn) { btn.disabled = false; btn.innerText = '데이터 저장'; }
+        // 5. 서버 저장 (Upsert)
+        const { error } = await this.supabase.from('production_actuals').upsert(payload, { onConflict: 'partner_id,work_date' });
 
         if (error) {
             alert('저장 실패: ' + error.message);
         } else {
-            alert('데이터가 성공적으로 저장되었습니다.');
+            alert(`${process.toUpperCase()} 공정 데이터가 성공적으로 저장되었습니다.`);
             document.getElementById('manual-input-modal').style.display = 'none';
-            document.getElementById('v13-manual-form').reset();
+            form.reset();
             this.refreshData();
         }
+        
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-save"></i> 데이터 저장';
     }
 
     // --- Data Management Handlers ---

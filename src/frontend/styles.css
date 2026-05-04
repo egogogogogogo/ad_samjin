@@ -964,3 +964,57 @@ body.mobile-mode .main-content {
     width: 100%;
 }
 
+/* JML MES v15.0 Styles */
+.process-select-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 15px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 30px;
+    color: var(--text-main);
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.process-select-btn:hover {
+    background: rgba(59, 130, 246, 0.1);
+    border-color: var(--accent);
+    transform: translateY(-5px);
+}
+
+.process-select-btn i {
+    font-size: 2.5rem;
+    color: var(--accent);
+}
+
+.process-select-btn span {
+    font-weight: 600;
+    font-size: 1.1rem;
+}
+
+.btn-secondary-compact {
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    padding: 5px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+.btn-secondary-compact:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+@media (max-width: 600px) {
+    .process-select-btn {
+        padding: 20px;
+    }
+    .process-select-btn i {
+        font-size: 2rem;
+    }
+}
+
