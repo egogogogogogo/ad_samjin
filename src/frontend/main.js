@@ -238,46 +238,147 @@ class JMLMES {
     async handleLogout() { await this.supabase.auth.signOut(); }
 
     async onAuthenticated(user) {
-        this.state.user = user;
-        document.getElementById('login-overlay').style.display = 'none';
-        document.getElementById('app-container').style.display = 'flex';
-        const { data: profile } = await this.supabase.from('profiles').select('*, partners(*)').eq('id', user.id).single();
-        if (profile && profile.partners) {
-            this.state.partner = profile.partners;
-            document.getElementById('user-display-name').innerText = profile.full_name || user.email;
+        try {
+            this.state.user = user;
+            this.log(`인증 성공: ${user.email}`, 'success');
             
-            // Set role and update UI
-            const role = profile.role || 'admin'; // default to admin if not set
+            document.getElementById('login-overlay').style.display = 'none';
+            document.getElementById('app-container').style.display = 'flex';
+            
+            // 1. 프로필 로드 (조인 제거하여 안정성 확보)
+            const { data: profile, error: prError } = await this.supabase.from('profiles').select('*').eq('id', user.id).single();
+            if (prError) throw new Error(`프로필 로드 실패: ${prError.message}`);
+            
+            // 역할 확정
+            let role = profile?.role || 'operator';
+            if (user.email.endsWith('@jml.com')) role = 'super_admin';
             this.state.profile = { ...profile, role };
-            document.getElementById('user-role').innerText = role === 'admin' ? 'Manager (Admin)' : 'Operator (Worker)';
             
-            if (role === 'operator') {
-                // Hide production plan and settings, only show dashboard and quality-data for operators
-                document.querySelectorAll('.nav-links li').forEach(li => {
-                    const tab = li.getAttribute('data-tab');
-                    if (tab !== 'quality-data' && tab !== 'dashboard') {
-                        li.style.display = 'none';
-                    }
-                });
-                // Default to dashboard when operator logs in
-                this.state.activeTab = 'dashboard';
-                
-                // Hide Excel upload and download template buttons for operators
-                const dropZone = document.getElementById('drop-zone');
-                const btnDownload = document.getElementById('btn-download-template');
-                if (dropZone) dropZone.style.display = 'none';
-                if (btnDownload) btnDownload.style.display = 'none';
+            // UI 업데이트
+            document.getElementById('user-display-name').innerText = profile?.full_name || user.email.split('@')[0];
+            const roleLabels = { 'super_admin': 'System Master', 'admin': 'Partner Admin', 'operator': 'Field Operator' };
+            document.getElementById('user-role').innerText = roleLabels[role] || 'User';
 
-                // If it's an operator, default to mobile-mode
-                if (!localStorage.getItem('mobile-mode')) {
-                    document.body.classList.add('mobile-mode');
-                    localStorage.setItem('mobile-mode', 'true');
+            // 2. 파트너(업체) 설정
+            if (role === 'super_admin') {
+                this.log('Super Admin 모드: 모든 업체 목록 검색 중...', 'info');
+                const { data: allPartners, error: pError } = await this.supabase.from('partners').select('*');
+                
+                if (pError) {
+                    this.log(`업체 목록 로드 실패: ${pError.message}`, 'error');
+                } else {
+                    this.state.allPartners = allPartners || [];
+                    this.log(`업체 목록 로드 완료: ${this.state.allPartners.length}건`, 'success');
+                    
+                    if (this.state.allPartners.length > 0) {
+                        this.state.partner = this.state.allPartners[0];
+                    }
                 }
+                this.renderPartnerSwitcher();
+            } else if (profile?.partner_id) {
+                // 일반 유저: 업체 정보 로드
+                const { data: partner } = await this.supabase.from('partners').select('*').eq('id', profile.partner_id).single();
+                this.state.partner = partner;
             }
 
-            await this.loadConfig();
-            await this.refreshData();
+            // 3. 최종 UI 렌더링
+            if (this.state.partner) {
+                this.log(`접속 업체: ${this.state.partner.name}`, 'info');
+                this.applyUIGuard(role);
+                await this.loadConfig();
+                await this.refreshData();
+            } else if (role === 'super_admin') {
+                this.applyUIGuard(role);
+                this.log('업체를 선택해 주세요.', 'warning');
+                this.renderUI();
+            } else {
+                throw new Error('소속된 업체 정보가 없습니다.');
+            }
+
+        } catch (err) {
+            console.error('Auth Error:', err);
+            alert(`시스템 초기화 오류: ${err.message}`);
+            this.log(`초기화 오류: ${err.message}`, 'error');
+            // 필요시 로그아웃 처리
         }
+    }
+
+    applyUIGuard(role) {
+        // 메뉴 항목 제어
+        document.querySelectorAll('.nav-links li').forEach(li => {
+            const tab = li.getAttribute('data-tab');
+            li.style.display = 'flex'; // 기본값 노출
+            
+            if (role === 'operator') {
+                // Operator: 요약 대시보드와 품질데이터만 허용
+                if (tab !== 'dashboard' && tab !== 'quality-data') {
+                    li.style.display = 'none';
+                }
+            }
+        });
+
+        // 기능 버튼 제어
+        const dropZone = document.getElementById('drop-zone');
+        const btnDownload = document.getElementById('btn-download-template');
+        const btnOpenManual = document.getElementById('btn-open-manual-input');
+        
+        if (role === 'operator') {
+            if (dropZone) dropZone.style.display = 'none';
+            if (btnDownload) btnDownload.style.display = 'none';
+            // 오퍼레이터는 수동 입력만 가능하게 둠 (필요시 조절)
+            if (btnOpenManual) btnOpenManual.style.display = 'flex';
+            
+            // 오퍼레이터는 강제 모바일 모드 진입 (선택 사항)
+            if (!localStorage.getItem('mobile-mode')) {
+                document.body.classList.add('mobile-mode');
+            }
+        } else {
+            if (dropZone) dropZone.style.display = 'flex';
+            if (btnDownload) btnDownload.style.display = 'flex';
+        }
+
+        // 초기 탭 설정
+        if (role === 'operator' && this.state.activeTab !== 'quality-data') {
+            this.switchTab('dashboard');
+        }
+    }
+
+    renderPartnerSwitcher() {
+        // 기존 스위처 제거
+        const existing = document.getElementById('partner-switcher-wrap');
+        if (existing) existing.remove();
+
+        if (this.state.profile.role !== 'super_admin') return;
+
+        const header = document.querySelector('.top-bar-left');
+        const wrap = document.createElement('div');
+        wrap.id = 'partner-switcher-wrap';
+        wrap.style.marginTop = '8px';
+        
+        let options = this.state.allPartners.map(p => 
+            `<option value="${p.id}" ${this.state.partner?.id === p.id ? 'selected' : ''}>${p.name}</option>`
+        ).join('');
+
+        wrap.innerHTML = `
+            <div style="display: flex; align-items: center; gap: 10px; background: rgba(59, 130, 246, 0.1); padding: 5px 12px; border-radius: 6px; border: 1px solid rgba(59, 130, 246, 0.3);">
+                <i class="fas fa-building" style="color: var(--accent); font-size: 0.8rem;"></i>
+                <select id="partner-selector" style="background: none; border: none; color: var(--text); font-family: inherit; font-size: 0.85rem; outline: none; cursor: pointer;">
+                    ${options}
+                </select>
+                <small style="color: var(--accent); font-weight: bold; font-size: 0.7rem; border-left: 1px solid rgba(255,255,255,0.1); padding-left: 10px;">SUPER ADMIN MODE</small>
+            </div>
+        `;
+
+        header.appendChild(wrap);
+
+        document.getElementById('partner-selector').onchange = (e) => {
+            const selected = this.state.allPartners.find(p => p.id === e.target.value);
+            if (selected) {
+                this.state.partner = selected;
+                this.log(`업체 전환: ${selected.name}`);
+                this.refreshData();
+            }
+        };
     }
 
     async loadConfig() {
@@ -345,6 +446,10 @@ class JMLMES {
         } else if (tab === 'quality-data') {
             document.getElementById('page-title').innerText = 'Quality Monitoring';
             this.renderQualityData();
+        } else if (tab === 'settings') {
+            document.getElementById('page-title').innerText = 'System Settings';
+            document.getElementById('setting-company').value = this.state.partner?.name || 'Unknown';
+            document.getElementById('setting-email').value = this.state.user?.email || '';
         }
     }
 
