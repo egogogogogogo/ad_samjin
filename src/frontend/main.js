@@ -189,22 +189,30 @@ class JMLMES {
     updateDateInputMode(mode) {
         this.state.dateMode = mode;
         const container = document.getElementById('date-input-container');
+        if (!container) return; // 방어 코드 추가
+        
         const now = new Date();
         const today = now.toISOString().split('T')[0];
         container.innerHTML = '';
         container.className = 'date-input-wrap-horizontal';
 
         if (mode === 'daily') {
-            container.appendChild(this.createDateInput('date', 'date-picker-main', today));
+            const input = this.createDateInput('date', 'date-picker-main', today);
+            if (input) container.appendChild(input);
             this.state.selectedDate = today;
         } else if (mode === 'weekly') {
             const input = this.createDateInput('week', 'date-picker-main', this.getCurrentWeekString());
-            container.appendChild(input);
-            this.state.selectedDate = input.value;
+            if (input) {
+                container.appendChild(input);
+                this.state.selectedDate = input.value;
+            }
         } else if (mode === 'monthly') {
             const val = today.slice(0, 7);
-            container.appendChild(this.createDateInput('month', 'date-picker-main', val));
-            this.state.selectedDate = val;
+            const input = this.createDateInput('month', 'date-picker-main', val);
+            if (input) {
+                container.appendChild(input);
+                this.state.selectedDate = val;
+            }
         } else if (mode === 'yearly') {
             const input = this.createDateInput('number', 'date-picker-main', now.getFullYear());
             input.min = 2020; input.max = 2030;

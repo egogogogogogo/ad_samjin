@@ -48,21 +48,21 @@
             <div id="btn-sidebar-collapse" class="sidebar-toggle-inner">
                 <i class="fas fa-angle-left"></i>
             </div>
-            <div class="sidebar-header">
-                <h2>JML MES</h2>
-                <small>v10.0 (Full Migration)</small>
-            </div>
-            <ul class="nav-links">
-                <li class="active" data-tab="dashboard"><i class="fas fa-chart-line"></i> 대시보드 요약</li>
-                <li data-tab="quality-data"><i class="fas fa-vial"></i> 품질데이터</li>
-                <li data-tab="settings"><i class="fas fa-cog"></i> 시스템 설정</li>
-            </ul>
-            <div class="sidebar-footer">
-                <div class="user-info" id="btn-profile" style="cursor: pointer;" title="프로필 설정/비밀번호 변경">
-                    <span id="user-display-name">Loading...</span>
-                    <small id="user-role">Partner Admin</small>
+            <div class="sidebar-content">
+                <div class="sidebar-header">
+                    <h2>JML</h2>
                 </div>
-                <button id="btn-logout" title="로그아웃"><i class="fas fa-sign-out-alt"></i></button>
+                <ul class="nav-links">
+                    <li class="active" data-tab="dashboard"><i class="fas fa-chart-line"></i> <span>대시보드 요약</span></li>
+                    <li data-tab="quality-data"><i class="fas fa-vial"></i> <span>품질데이터</span></li>
+                    <li data-tab="settings"><i class="fas fa-cog"></i> <span>시스템 설정</span></li>
+                </ul>
+                <div class="sidebar-footer">
+                    <div class="user-info" id="btn-profile" style="cursor: pointer;">
+                        <span id="user-display-name">Loading...</span>
+                    </div>
+                    <button id="btn-logout" title="로그아웃"><i class="fas fa-sign-out-alt"></i></button>
+                </div>
             </div>
         </aside>
 
@@ -80,35 +80,31 @@
                         <button class="filter-btn" data-mode="yearly">연간</button>
                         <button class="filter-btn" data-mode="custom">사용자지정</button>
                     </div>
-                    <div id="date-input-container">
-                        <!-- Dynamic Date Inputs -->
-                    </div>
+                    <div id="date-input-container"></div>
                     <div class="header-actions">
                         <button id="btn-refresh" class="btn-icon" title="새로고침"><i class="fas fa-sync-alt"></i></button>
-                        <button id="btn-toggle-view" class="btn-icon" title="화면 전환"><i class="fas fa-mobile-alt"></i></button>
                     </div>
                 </div>
             </header>
 
-            <!-- Dashboard Tab -->
-            <section id="tab-dashboard" class="tab-content active">
-                <!-- Action Bar (Upload/Input) -->
-                <section class="action-bar card">
-                    <div class="grid-3col">
-                        <button id="btn-open-manual-input" class="btn-action success">
-                            <i class="fas fa-edit"></i> 키인
-                        </button>
-                        <div id="drop-zone" class="drop-zone">
-                            <i class="fas fa-cloud-upload-alt"></i>
-                            <span>업로드</span>
-                            <input type="file" id="file-input" hidden>
-                        </div>
-                        <button id="btn-download-template" class="btn-action info">
-                            <i class="fas fa-download"></i> 템플릿
-                        </button>
+            <!-- Global Action Bar -->
+            <section class="action-bar card" style="margin-bottom: 20px;">
+                <div class="grid-3col">
+                    <button id="btn-open-manual-input" class="btn-action success">
+                        <i class="fas fa-edit"></i> 키인
+                    </button>
+                    <div id="drop-zone" class="drop-zone">
+                        <i class="fas fa-cloud-upload-alt"></i>
+                        <span>업로드</span>
+                        <input type="file" id="file-input" hidden>
                     </div>
-                </section>
+                    <button id="btn-download-template" class="btn-action info">
+                        <i class="fas fa-download"></i> 템플릿
+                    </button>
+                </div>
+            </section>
 
+            <section id="tab-dashboard" class="tab-content active">
                 <!-- Dashboard Sub-Tabs -->
                 <div class="sub-tab-container" id="dashboard-sub-tabs">
                     <button class="sub-tab active" data-sub="total">종합 요약</button>
@@ -121,22 +117,18 @@
                     <!-- Dynamic KPI cards here -->
                 </div>
 
-                <!-- AI Insight Box (Strategic Feedback) -->
+                <!-- AI Insight Box -->
                 <div class="card insight-card" id="ai-insight-container">
                     <div class="insight-header">
                         <i class="fas fa-brain"></i>
                         <span>AI 전략 분석 리포트</span>
                     </div>
                     <div class="insight-content" id="ai-insight-text">
-                        데이터를 동기화 중입니다... 해당 기간의 종합 생산 및 품질 지표를 분석하여 여기에 표시합니다.
+                        데이터를 분석 중입니다...
                     </div>
                 </div>
 
-                <!-- Charts Area -->
-                <!-- Re-structured Chart Grid -->
                 <div class="dashboard-chart-layout">
-                    <!-- Row 1: Trend (Full Width) -->
-                    <div class="card chart-full-width">
                     <div class="card chart-full-width">
                         <div class="card-header">
                             <h3><i class="fas fa-chart-area"></i> 생산 및 불량 트렌드 (PPM)</h3>
@@ -144,7 +136,6 @@
                         <div class="chart-container" style="height: 350px;">
                             <canvas id="mainChart"></canvas>
                         </div>
-                    </div>
                     </div>
 
                     <!-- Row 2: 50/50 Split -->
