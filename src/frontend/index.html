@@ -60,7 +60,7 @@
                 <div class="sidebar-footer">
                     <div class="user-info" id="btn-profile" style="cursor: pointer;">
                         <span id="user-display-name">Loading...</span>
-                        <span id="user-role" style="font-size: 0.7rem; color: var(--text-dim); display: block; margin-top: 2px;">Role</span>
+                        <span id="user-role" style="font-size: 0.7rem; color: var(--text-dim); display: block; margin-top: 2px;"></span>
                     </div>
                     <button id="btn-logout" title="로그아웃"><i class="fas fa-sign-out-alt"></i></button>
                 </div>
@@ -72,7 +72,6 @@
             <header class="top-header">
                 <div class="header-left">
                     <h1 id="page-title">Dashboard Summary</h1>
-                    <div id="partner-switcher-container"></div>
                 </div>
                 <div class="header-right">
                     <div id="dashboard-date-modes" class="filter-group">
@@ -89,22 +88,6 @@
                 </div>
             </header>
 
-            <!-- Global Action Bar -->
-            <section class="action-bar card" style="margin-bottom: 20px;">
-                <div class="grid-3col">
-                    <button id="btn-open-manual-input" class="btn-action success">
-                        <i class="fas fa-edit"></i> 키인
-                    </button>
-                    <div id="drop-zone" class="drop-zone">
-                        <i class="fas fa-cloud-upload-alt"></i>
-                        <span>업로드</span>
-                        <input type="file" id="file-input" hidden>
-                    </div>
-                    <button id="btn-download-template" class="btn-action info">
-                        <i class="fas fa-download"></i> 템플릿
-                    </button>
-                </div>
-            </section>
 
             <section id="tab-dashboard" class="tab-content active">
                 <!-- Dashboard Sub-Tabs -->
@@ -482,8 +465,6 @@
     </style>
 
     <script src="config.js"></script>
-    <script src="auth.js"></script>
-    <script src="api.js"></script>
     <script src="main.js"></script>
 </body>
 </html>
