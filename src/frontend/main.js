@@ -283,7 +283,7 @@ class JMLMES {
 
             // 3. 최종 UI 렌더링
             if (this.state.partner) {
-                this.log(`접속 업체: ${this.state.partner.name}`, 'info');
+                this.log(`접속 업체: ${this.state.partner.company_name || this.state.partner.name}`, 'info');
                 this.applyUIGuard(role);
                 await this.loadConfig();
                 await this.refreshData();
@@ -448,7 +448,7 @@ class JMLMES {
             this.renderQualityData();
         } else if (tab === 'settings') {
             document.getElementById('page-title').innerText = 'System Settings';
-            document.getElementById('setting-company').value = this.state.partner?.name || 'Unknown';
+            document.getElementById('setting-company').value = this.state.partner?.company_name || this.state.partner?.name || 'Unknown';
             document.getElementById('setting-email').value = this.state.user?.email || '';
         }
     }
