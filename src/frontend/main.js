@@ -265,15 +265,19 @@ class JMLMES {
 
     async onAuthenticated(user) {
         try {
-            this.state.user = user;
-            this.log(`인증 성공: ${user.email}`, 'success');
-            
+            // 0. UI 즉시 전환 (사용자 대기 방지)
             document.getElementById('login-overlay').style.display = 'none';
             document.getElementById('app-container').style.display = 'flex';
             
-            // 1. 프로필 로드 (조인 제거하여 안정성 확보)
+            this.state.user = user;
+            console.log('Auth Success:', user.email);
+            
+            // 1. 프로필 로드
             const { data: profile, error: prError } = await this.supabase.from('profiles').select('*').eq('id', user.id).single();
-            if (prError) throw new Error(`프로필 로드 실패: ${prError.message}`);
+            if (prError) {
+                console.warn('Profile fetch error:', prError.message);
+                // 프로필이 없어도 기본 역할로 진행 가능하게 처리
+            }
             
             // 역할 확정
             let role = profile?.role || 'operator';
