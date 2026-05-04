@@ -156,6 +156,16 @@ class JMLMES {
         // Save Settings
         const btnSaveSettings = document.getElementById('btn-save-settings');
         if (btnSaveSettings) btnSaveSettings.onclick = () => this.saveSettings();
+
+        // Password Modal Events
+        const btnProfile = document.getElementById('btn-profile');
+        const pwModal = document.getElementById('password-modal');
+        const btnClosePwModal = document.getElementById('btn-close-password-modal');
+        const btnChangePwModal = document.getElementById('btn-modal-change-password');
+
+        if (btnProfile) btnProfile.onclick = () => { pwModal.style.display = 'flex'; };
+        if (btnClosePwModal) btnClosePwModal.onclick = () => { pwModal.style.display = 'none'; };
+        if (btnChangePwModal) btnChangePwModal.onclick = () => this.handleChangePassword();
     }
 
     updateDateInputMode(mode) {
@@ -1798,13 +1808,13 @@ class JMLMES {
     }
 
     async handleChangePassword() {
-        const newPw = document.getElementById('new-password').value;
-        const confirmPw = document.getElementById('new-password-confirm').value;
+        const newPw = document.getElementById('modal-new-password').value;
+        const confirmPw = document.getElementById('modal-new-password-confirm').value;
 
         if (!newPw || newPw.length < 6) return alert('비밀번호는 최소 6자 이상이어야 합니다.');
         if (newPw !== confirmPw) return alert('비밀번호가 일치하지 않습니다.');
 
-        const btn = document.getElementById('btn-change-password');
+        const btn = document.getElementById('btn-modal-change-password');
         btn.disabled = true;
         btn.innerText = '변경 중...';
 
@@ -1813,13 +1823,14 @@ class JMLMES {
             if (error) throw error;
             
             alert('비밀번호가 성공적으로 변경되었습니다. 다음 로그인부터 적용됩니다.');
-            document.getElementById('new-password').value = '';
-            document.getElementById('new-password-confirm').value = '';
+            document.getElementById('modal-new-password').value = '';
+            document.getElementById('modal-new-password-confirm').value = '';
+            document.getElementById('password-modal').style.display = 'none';
         } catch (err) {
             alert('비밀번호 변경 실패: ' + err.message);
         } finally {
             btn.disabled = false;
-            btn.innerText = '비밀번호 즉시 변경';
+            btn.innerText = '비밀번호 변경 저장';
         }
     }
 }
