@@ -849,7 +849,9 @@ class JMLMES {
     }
 
     renderProcessCapaChart(data) {
-        const ctx = document.getElementById('processCapaChart').getContext('2d');
+        const el = document.getElementById('processCapaChart');
+        if (!el) return;
+        const ctx = el.getContext('2d');
         if (this.state.charts.capa) this.state.charts.capa.destroy();
         
         // 날짜 범위 계산 (데이터가 있는 실제 일수 또는 선택된 기간의 일수)
@@ -868,7 +870,13 @@ class JMLMES {
         const baseColors = ['#3b82f6', '#fbbf24', '#8b5cf6', '#10b981']; // 공정 고유 색상
         
         const perfData = labels.map(l => {
-            const param = this.state.config.simParams?.find(p => p.process === l) || { timeCapa: 550, runTime: 20, machines: 5, days: 25 };
+            const simParams = this.state.config?.simParams || [
+                { process: '성형', timeCapa: 6000, runTime: 10, machines: 5 },
+                { process: '조립', timeCapa: 1750, runTime: 13, machines: 11 },
+                { process: '포장', timeCapa: 4000, runTime: 13, machines: 4 },
+                { process: '검사', timeCapa: 16500, runTime: 8, machines: 2 }
+            ];
+            const param = simParams.find(p => p.process === l) || { timeCapa: 550, runTime: 20, machines: 5 };
             const dailyCapa = (param.timeCapa || 550) * (param.runTime || 20) * (param.machines || 5);
             const totalCapa = dailyCapa * days;
             return totalCapa ? Math.round((sums[l] / totalCapa) * 100) : 0;
