@@ -405,7 +405,8 @@ class JMLMES {
 
         if (this.state.profile.role !== 'super_admin') return;
 
-        const header = document.querySelector('.top-bar-left');
+        const header = document.querySelector('.header-left');
+        if (!header) return;
         const wrap = document.createElement('div');
         wrap.id = 'partner-switcher-wrap';
         wrap.style.marginTop = '8px';

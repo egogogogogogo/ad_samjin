@@ -50,7 +50,8 @@
             </div>
             <div class="sidebar-content">
                 <div class="sidebar-header">
-                    <h2>JML</h2>
+                    <i class="fas fa-microchip logo-icon"></i>
+                    <span class="logo-text">JML <span class="logo-accent">SYSTEM</span></span>
                 </div>
                 <ul class="nav-links">
                     <li class="active" data-tab="dashboard"><i class="fas fa-chart-line"></i> <span>대시보드 요약</span></li>
@@ -150,13 +151,13 @@
                 <!-- Top controls -->
                 <div class="card mb-15" style="padding: 15px;">
                     <div style="display: flex; gap: 15px; align-items: center;">
-                        <button id="btn-open-manual-input" class="btn-accent"><i class="fas fa-edit"></i> 데이터 수동 키인 (Key-in)</button>
+                        <button id="btn-open-manual-input" class="btn-accent"><i class="fas fa-edit"></i> 키인</button>
                         <div id="drop-zone" class="drop-zone-compact" style="flex: 1; display: flex; align-items: center; justify-content: center; gap: 10px; border: 1px dashed var(--border); padding: 10px; border-radius: 8px; cursor: pointer; background: var(--bg-card); transition: all 0.2s;">
                             <i class="fas fa-cloud-upload-alt" style="color: var(--primary);"></i>
-                            <span style="color: var(--text-dim);">엑셀 파일 대량 업로드 (클릭 또는 드래그)</span>
+                            <span style="color: var(--text-dim);">업로드</span>
                             <input type="file" id="file-input" hidden accept=".xlsx">
                         </div>
-                        <button id="btn-download-template" class="btn-secondary-compact"><i class="fas fa-download"></i> R07 표준 엑셀 템플릿 다운로드</button>
+                        <button id="btn-download-template" class="btn-secondary-compact"><i class="fas fa-download"></i> 템플릿</button>
                     </div>
                     <div id="upload-preview" style="display: none; margin-top: 15px; background: rgba(0,0,0,0.2); padding: 10px; border-radius: 8px; border: 1px solid var(--border);">
                         <div class="preview-info">
