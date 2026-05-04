@@ -46,4 +46,10 @@ class AuthManager {
             'operator': 'Field Operator'
         };
     }
+
+    onAuthStateChange(callback) {
+        this.supabase.auth.onAuthStateChange((event, session) => {
+            callback(event, session);
+        });
+    }
 }

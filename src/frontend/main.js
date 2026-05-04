@@ -22,7 +22,18 @@ class JMLMES {
             activeTab: 'dashboard',
             charts: {}
         };
+        this.setupAuthListener();
         this.init();
+    }
+
+    setupAuthListener() {
+        this.auth.onAuthStateChange(async (event, session) => {
+            if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
+                if (session) await this.onAuthenticated(session.user);
+            } else if (event === 'SIGNED_OUT') {
+                this.showLogin();
+            }
+        });
     }
 
     async init() {
@@ -94,10 +105,20 @@ class JMLMES {
         if (session) {
             await this.onAuthenticated(session.user);
         } else {
-            const overlay = document.getElementById('login-overlay');
-            const app = document.getElementById('app-container');
-            if (overlay) overlay.style.display = 'flex';
-            if (app) app.style.display = 'none';
+            this.showLogin();
+        }
+    }
+
+    showLogin() {
+        const overlay = document.getElementById('login-overlay');
+        const app = document.getElementById('app-container');
+        if (overlay) overlay.style.display = 'flex';
+        if (app) app.style.display = 'none';
+        
+        const btn = document.getElementById('btn-login');
+        if (btn) {
+            btn.disabled = false;
+            btn.innerText = '로그인';
         }
     }
 
