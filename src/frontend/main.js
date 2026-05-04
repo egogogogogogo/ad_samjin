@@ -356,7 +356,7 @@ class JMLMES {
         wrap.style.marginTop = '8px';
         
         let options = this.state.allPartners.map(p => 
-            `<option value="${p.id}" ${this.state.partner?.id === p.id ? 'selected' : ''}>${p.name}</option>`
+            `<option value="${p.id}" ${this.state.partner?.id === p.id ? 'selected' : ''}>${p.company_name || p.name || '알 수 없는 업체'}</option>`
         ).join('');
 
         wrap.innerHTML = `
