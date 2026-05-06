@@ -51,14 +51,17 @@ class JMLMES {
     }
 
     bindEvents() {
-        // Login & Logout
-        document.getElementById('btn-login').onclick = () => this.handleLogin();
-        document.getElementById('btn-logout').onclick = () => this.handleLogout();
+        const loginBtn = document.getElementById('btn-login');
+        if (loginBtn) loginBtn.onclick = () => this.handleLogin();
+        
+        const logoutBtn = document.getElementById('btn-logout');
+        if (logoutBtn) logoutBtn.onclick = () => this.handleLogout();
 
         // Enter key for login
         const loginInputs = ['login-email', 'login-pw'];
         loginInputs.forEach(id => {
-            document.getElementById(id).onkeydown = (e) => {
+            const el = document.getElementById(id);
+            if (el) el.onkeydown = (e) => {
                 if (e.key === 'Enter') this.handleLogin();
             };
         });
@@ -95,30 +98,46 @@ class JMLMES {
                 this.state.selectedProcess = process;
                 
                 // UI Switch to Step 2
-                document.getElementById('manual-step-1').style.display = 'none';
-                document.getElementById('v13-manual-form').style.display = 'block';
-                document.getElementById('selected-process-title').innerText = `공정: ${btnEl.querySelector('span').innerText}`;
+                const step1 = document.getElementById('manual-step-1');
+                const manualForm = document.getElementById('v13-manual-form');
+                const title = document.getElementById('selected-process-title');
+                
+                if (step1) step1.style.display = 'none';
+                if (manualForm) manualForm.style.display = 'block';
+                if (title) title.innerText = `공정: ${btnEl.querySelector('span').innerText}`;
                 
                 // Show/Hide specific inputs based on process
                 this.toggleManualInputFields(process);
             };
         });
 
-        document.getElementById('btn-open-manual-input').onclick = () => {
-            document.getElementById('manual-input-modal').style.display = 'flex';
-            // Reset to Step 1
-            document.getElementById('manual-step-1').style.display = 'block';
-            document.getElementById('v13-manual-form').style.display = 'none';
-            this.state.selectedProcess = null;
-        };
+        const btnOpenManual = document.getElementById('btn-open-manual-input');
+        if (btnOpenManual) {
+            btnOpenManual.onclick = () => {
+                const modal = document.getElementById('manual-input-modal');
+                const step1 = document.getElementById('manual-step-1');
+                const manualForm = document.getElementById('v13-manual-form');
+                
+                if (modal) modal.style.display = 'flex';
+                if (step1) step1.style.display = 'block';
+                if (manualForm) manualForm.style.display = 'none';
+                this.state.selectedProcess = null;
+            };
+        }
 
-        document.getElementById('btn-export-data').onclick = () => this.exportDataToExcel();
+        const btnExport = document.getElementById('btn-export-data');
+        if (btnExport) btnExport.onclick = () => this.exportDataToExcel();
 
-        document.getElementById('btn-back-to-step1').onclick = () => {
-            document.getElementById('manual-step-1').style.display = 'block';
-            document.getElementById('v13-manual-form').style.display = 'none';
-            this.state.selectedProcess = null;
-        };
+        const btnBackStep1 = document.getElementById('btn-back-to-step1');
+        if (btnBackStep1) {
+            btnBackStep1.onclick = () => {
+                const step1 = document.getElementById('manual-step-1');
+                const manualForm = document.getElementById('v13-manual-form');
+                if (step1) step1.style.display = 'block';
+                if (manualForm) manualForm.style.display = 'none';
+                this.state.selectedProcess = null;
+            };
+        }
 
         document.querySelectorAll('#dashboard-date-modes .filter-btn').forEach(btn => {
             btn.onclick = (e) => {
@@ -128,7 +147,8 @@ class JMLMES {
             };
         });
 
-        document.getElementById('btn-refresh').onclick = () => this.refreshData();
+        const btnRefresh = document.getElementById('btn-refresh');
+        if (btnRefresh) btnRefresh.onclick = () => this.refreshData();
         
         const btnToggleView = document.getElementById('btn-toggle-view');
         if (btnToggleView) {
@@ -136,7 +156,6 @@ class JMLMES {
                 document.body.classList.toggle('mobile-mode');
                 localStorage.setItem('mobile-mode', document.body.classList.contains('mobile-mode'));
                 
-                // If switching to mobile, open the first active tab (like Quality Data) if on operator mode
                 if (document.body.classList.contains('mobile-mode') && this.state.profile?.role === 'operator') {
                     this.switchTab('quality-data');
                 }
@@ -337,17 +356,16 @@ class JMLMES {
             
             // 1. 프로필 로드
             const { data: profile, error: prError } = await this.supabase.from('profiles').select('*').eq('id', user.id).single();
-            if (prError) {
+            if (prError && prError.code !== 'PGRST116') { // PGRST116 is 'not found'
                 console.warn('Profile fetch error:', prError.message);
-                // 프로필이 없어도 기본 역할로 진행 가능하게 처리
             }
             
-            // 역할 확정
+            // 역할 및 파트너 기본값 설정
             let role = profile?.role || 'operator';
             if (user.email.endsWith('@jml.com')) role = 'super_admin';
             this.state.profile = { ...profile, role };
             
-            // UI 업데이트
+            // UI 업데이트 (안전하게)
             const nameEl = document.getElementById('user-display-name');
             const roleEl = document.getElementById('user-role');
             if (nameEl) nameEl.innerText = profile?.full_name || user.email.split('@')[0];
@@ -355,25 +373,25 @@ class JMLMES {
             if (roleEl) roleEl.innerText = roleLabels[role] || 'User';
 
             // 2. 파트너(업체) 설정
+            const { data: allPartners } = await this.supabase.from('partners').select('*');
+            this.state.allPartners = allPartners || [];
+
             if (role === 'super_admin') {
-                this.log('Super Admin 모드: 모든 업체 목록 검색 중...', 'info');
-                const { data: allPartners, error: pError } = await this.supabase.from('partners').select('*');
-                
-                if (pError) {
-                    this.log(`업체 목록 로드 실패: ${pError.message}`, 'error');
-                } else {
-                    this.state.allPartners = allPartners || [];
-                    this.log(`업체 목록 로드 완료: ${this.state.allPartners.length}건`, 'success');
-                    
-                    if (this.state.allPartners.length > 0) {
-                        this.state.partner = this.state.allPartners[0];
-                    }
+                this.log('Super Admin 모드: 모든 업체 목록 검색 완료', 'info');
+                if (this.state.allPartners.length > 0) {
+                    this.state.partner = this.state.allPartners[0];
                 }
                 this.renderPartnerSwitcher();
-            } else if (profile?.partner_id) {
-                // 일반 유저: 업체 정보 로드
-                const { data: partner } = await this.supabase.from('partners').select('*').eq('id', profile.partner_id).single();
-                this.state.partner = partner;
+            } else {
+                // 일반 유저: 프로필에 등록된 업체 또는 첫 번째 업체(폴백)
+                if (profile?.partner_id) {
+                    const { data: partner } = await this.supabase.from('partners').select('*').eq('id', profile.partner_id).single();
+                    this.state.partner = partner;
+                } else if (this.state.allPartners.length > 0) {
+                    // 프로필이 없거나 업체 정보가 없을 경우 첫 번째 업체로 폴백 (현장 운영 대응)
+                    this.state.partner = this.state.allPartners[0];
+                    this.log('프로필에 지정된 업체가 없어 기본 업체로 연결합니다.', 'warning');
+                }
             }
 
             // 3. 최종 UI 렌더링
@@ -387,7 +405,7 @@ class JMLMES {
                 this.log('업체를 선택해 주세요.', 'warning');
                 this.renderUI();
             } else {
-                throw new Error('소속된 업체 정보가 없습니다.');
+                throw new Error('소속된 업체 정보가 없습니다. 관리자에게 문의하세요.');
             }
 
         } catch (err) {
@@ -1883,7 +1901,7 @@ class JMLMES {
             document.getElementById('preview-count').innerHTML = `
                 <div style="text-align: left; margin-top: 10px;">
                     <p>✅ 분석 기간: ${this.state.pendingUploadData.length}일치</p>
-                    <p>✅ 분석 항목: 성형(5대), 조립(11대), 포장(4대), 검사(3대)</p>
+                    <p>✅ 분석 항목: 성형(5대), 조립(12대), 포장(4대), 검사(3대)</p>
                     <p>✅ 품질 데이터: 불량 6종 및 Cap 탈거력 샘플링 완료</p>
                     <p style="color: var(--accent); margin-top: 5px;">※ 위 항목들이 상세 필드(JSONB)로 저장됩니다.</p>
                 </div>

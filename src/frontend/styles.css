@@ -249,10 +249,25 @@ input:focus {
     display: flex;
     align-items: center;
     gap: 12px;
+    margin-bottom: 40px;
+}
+
+.logo-icon {
+    font-size: 1.8rem;
+    color: var(--accent);
+    filter: drop-shadow(0 0 8px rgba(59, 130, 246, 0.5));
+}
+
+.logo-text {
     font-size: 1.2rem;
     font-weight: 700;
     color: white;
-    margin-bottom: 40px;
+    letter-spacing: -0.5px;
+}
+
+.logo-accent {
+    color: var(--accent);
+    font-weight: 800;
 }
 
 .nav-links {
