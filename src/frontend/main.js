@@ -1751,10 +1751,8 @@ class JMLMES {
         const sections = document.querySelectorAll('.manual-section');
         sections.forEach(sec => sec.style.display = 'none');
 
-        // Show the selected process section
         const target = document.getElementById(`section-${process}`);
         if (target) target.style.display = 'block';
-    }
     }
 
     switchTab(id) { this.state.activeTab = id; this.renderUI(); }
